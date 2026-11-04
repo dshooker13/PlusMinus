@@ -80,7 +80,6 @@ In the input column, `a ± b` is typed with `Esc +- Esc` (or written `PlusMinus[
 | `PmEqualQ[x, y]` | Are both parts equal? | `PmEqualQ[a ± b, a ∓ (-b)]` | `True` |
 | `PmFlip[expr]` | Swap ± and ∓ | `PmFlip[a ± b]` | `a ∓ b` |
 | `PmSolve[eqns, vars]` | Solve, merging two solutions into one | `PmSolve[x^2 - 2x - 1 == 0, x]` | `{{x -> 1 ± Sqrt[2]}}` |
-| `PmToInterval[expr]` | Interval spanned by numeric branches | `PmToInterval[3 ± 1/2]` | `Interval[{5/2, 7/2}]` |
 
 ### Chains of commands
 
