@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Runs on every push with the free, open-source Mathics3 interpreter. No license needed.
+  mathics:
+    name: Tests (Mathics3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Mathics3
+        run: pip install "mathics3>=10,<11"
+      - name: Run tests
+        run: mathics -q -f Scripts/RunTests.wls < /dev/null
+
+  # Runs on the real Wolfram Engine. This needs an on-demand license entitlement
+  # (billed to Wolfram Service Credits) stored as the repository secret
+  # WOLFRAMSCRIPT_ENTITLEMENTID (see README). Without it, the job is skipped instead of failing.
+  wolfram-engine:
+    name: Tests (Wolfram Engine)
+    runs-on: ubuntu-latest
+    container:
+      image: wolframresearch/wolframengine:latest
+      options: --user root
+    env:
+      WOLFRAMSCRIPT_ENTITLEMENTID: ${{ secrets.WOLFRAMSCRIPT_ENTITLEMENTID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        if: env.WOLFRAMSCRIPT_ENTITLEMENTID != ''
+        run: wolframscript -file Scripts/RunTests.wls
+      - name: Skip notice
+        if: env.WOLFRAMSCRIPT_ENTITLEMENTID == ''
+        run: echo "WOLFRAMSCRIPT_ENTITLEMENTID is not set, so the Wolfram Engine tests were skipped."
