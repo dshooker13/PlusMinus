@@ -3,6 +3,7 @@
 (* ::Title:: *)
 (*PMFunctions*)
 
+
 (* ::Text:: *)
 (*Algebra with \[PlusMinus] (PlusMinus) and \[MinusPlus] (MinusPlus) in the Wolfram Language.*)
 (**)
@@ -82,8 +83,6 @@ PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[Pl
 PmSolve::usage = "PmSolve[eqns, vars] solves eqns with Solve and, when there are exactly two solutions, merges them into a single \[PlusMinus] solution.
 PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.";
 
-PmToInterval::usage = "PmToInterval[expr] returns Interval[{min, max}] spanning the two branches of a numeric expression.
-PmToInterval[3 \[PlusMinus] 1/2] returns Interval[{5/2, 7/2}].";
 
 
 (* ::Subsection:: *)
@@ -92,7 +91,6 @@ PmToInterval[3 \[PlusMinus] 1/2] returns Interval[{5/2, 7/2}].";
 
 PmFromList::arg = "Expected a list of two branches {p, m}, but got `1`.";
 PmSolve::nopair = "Solve returned `1` solution(s), not 2, so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
-PmToInterval::nonum = "The branches `1` are not both numeric, so no Interval can be formed.";
 
 
 Begin["`Private`"]
@@ -228,18 +226,6 @@ PmSolve[eqns_, vars_, rest___] := Module[{sols, keys, pair},
 	pair = {keys /. sols[[1]], keys /. sols[[2]]};
 	If[leadingMinusQ[Last[halves[pair[[All, 1]], Simplify]]], pair = Reverse[pair]];
 	{MapThread[#1 -> PmFromList[{#2, #3}] &, {keys, pair[[1]], pair[[2]]}]}
-]
-
-
-(* ::Section:: *)
-(*Numeric helpers*)
-
-
-PmToInterval[expr_] := Module[{b = PmToList[expr]},
-	If[And @@ (NumericQ /@ b),
-		Interval[{Min[b], Max[b]}],
-		Message[PmToInterval::nonum, b]; $Failed
-	]
 ]
 
 
