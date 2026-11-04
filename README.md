@@ -19,6 +19,7 @@ PmMap[D[#, x] &, x^2 ± x^3]
 PmSolve[x^2 + b x + c == 0, x]
 (* {{x -> -b/2 ± Sqrt[b^2 - 4 c]/2}} *)
 ```
+It is important to remember that these are discrete points, not a statistical ±.
 
 ## How it works
 
