@@ -94,7 +94,7 @@ PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[Pl
 
 PmSolve::usage = "PmSolve[eqns, vars] solves eqns with Solve and, when there are exactly two solutions, merges them into a single \[PlusMinus] solution.
 PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.
-If eqns already contain \[PlusMinus], each branch is solved separately and the solutions are paired up, keeping the sign of the equations: PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns {{x -> -Sqrt[4 \[PlusMinus] 1]}, {x -> Sqrt[4 \[PlusMinus] 1]}} (up to how Simplify writes it).";
+If eqns already contain \[PlusMinus], each branch is solved separately and the solutions are paired up, keeping the sign of the equations: PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns two \[PlusMinus] solutions, one with branches -Sqrt[5] and -Sqrt[3] and one with Sqrt[5] and Sqrt[3].";
 
 
 

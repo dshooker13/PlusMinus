@@ -1,11 +1,12 @@
 (* ::Package:: *)
 
-(* A tour of PMFunctions. Run from the repository root:
+(* A tour of PMFunctions. Run it with
      wolframscript -file Examples/Examples.wl
-     mathics -q -f Examples/Examples.wl
    or open it in Mathematica and evaluate the cells one at a time. *)
 
-PrependTo[$Path, FileNameJoin[{ParentDirectory[DirectoryName[$InputFileName]], "Kernel"}]];
+(* $InputFileName is empty when cells are evaluated in a notebook; NotebookDirectory[]
+   then gives the folder of this file. *)
+PacletDirectoryLoad[ParentDirectory[If[$InputFileName =!= "", DirectoryName[$InputFileName], NotebookDirectory[]]]];
 Needs["PMFunctions`"];
 
 show[label_String, expr_] := Print[label, "\n    ", expr, "\n"];
@@ -48,7 +49,15 @@ show["x^2 - 2x - 1 == 0:", PmSolve[x^2 - 2 x - 1 == 0, x]];
 
 
 (* ::Section:: *)
-(*Comparing and numerics*)
+(*Comparing*)
 
 
 show["Is a \[PlusMinus] b the same as a \[MinusPlus] (-b)?", PmEqualQ[PlusMinus[a, b], MinusPlus[a, -b]]];
+
+
+(* ::Section:: *)
+(*When the branches can't be written as a \[PlusMinus] b*)
+
+
+show["Equations are combined side by side:", PmSimplify[PlusMinus[a, b] == c]];
+show["2/(1 \[PlusMinus] 1) has an infinite branch, so the branches are kept:", Quiet[PmArithmetic[2, PlusMinus[1, 1], Divide]]];
