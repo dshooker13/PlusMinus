@@ -1,14 +1,6 @@
-(* Tests for PmSolve and PmToInterval. *)
+(* Tests for PmSolve. *)
 
-Needs["PMFunctions`"]
-
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 
 (* ::Section:: *)
@@ -60,19 +52,9 @@ VerificationTest[
 	TestID -> "PmSolve-one-root-returned-unchanged"
 ]
 
-
-(* ::Section:: *)
-(*PmToInterval*)
-
-
-VerificationTest[First[PmToInterval[PlusMinus[3, 1/2]]], {5/2, 7/2}, TestID -> "PmToInterval-basic"]
-VerificationTest[First[PmToInterval[MinusPlus[3, 1/2]]], {5/2, 7/2}, TestID -> "PmToInterval-minusplus"]
-VerificationTest[First[PmToInterval[PlusMinus[0, -2]]], {-2, 2}, TestID -> "PmToInterval-negative-pm"]
-VerificationTest[First[PmToInterval[PlusMinus[1, 2]^2]], {1, 9}, TestID -> "PmToInterval-expression"]
-
 VerificationTest[
-	PmToInterval[PlusMinus[a, b]],
-	$Failed,
-	{PmToInterval::nonum},
-	TestID -> "PmToInterval-symbolic"
+	PmSolve[x^2 + 1 == 0, x, Reals],
+	{},
+	{PmSolve::nopair},
+	TestID -> "PmSolve-passes-domain-to-Solve"
 ]

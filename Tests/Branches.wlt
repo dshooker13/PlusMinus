@@ -1,12 +1,13 @@
 (* Tests for PmQ, PmToList and PmFromList: splitting into branches and recombining. *)
 
-Needs["PMFunctions`"]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 
 (* ::Section:: *)
 (*PmQ*)
 
 
+VerificationTest[PmToList[MinusPlus[a, b, c]], {a - b - c, a + b + c}, TestID -> "PmToList-nary-minusplus"]
 VerificationTest[PmQ[PlusMinus[a, b]], True, TestID -> "PmQ-plusminus"]
 VerificationTest[PmQ[MinusPlus[a, b]], True, TestID -> "PmQ-minusplus"]
 VerificationTest[PmQ[x^2 + Sin[PlusMinus[a, b]]], True, TestID -> "PmQ-nested"]
@@ -61,7 +62,7 @@ VerificationTest[PmFromList[{x, -x}], PlusMinus[x], TestID -> "PmFromList-opposi
 VerificationTest[PmFromList[{3, 1}], PlusMinus[2, 1], TestID -> "PmFromList-numbers"]
 
 VerificationTest[
-	PmFromList[{(a + b)^2, (a - b)^2}, "Simplifier" -> Expand],
+	PmFromList[{(a + b)^2, (a - b)^2}, "Simplifier" -> Factor],
 	PlusMinus[a^2 + b^2, 2 a b],
 	TestID -> "PmFromList-simplifier-option"
 ]
@@ -86,4 +87,5 @@ VerificationTest[
 
 VerificationTest[PmFromList[PmToList[PlusMinus[a, b]]], PlusMinus[a, b], TestID -> "roundtrip-plusminus"]
 VerificationTest[PmFromList[PmToList[MinusPlus[a, b]]], PlusMinus[a, -b], TestID -> "roundtrip-minusplus"]
-VerificationTest[PmToList[PmFromList[{p, m}]], {p, m}, TestID -> "roundtrip-list"]
+(* PmToList substitutes without simplifying (by design), so compare after Simplify. *)
+VerificationTest[Simplify[PmToList[PmFromList[{p, m}]]], {p, m}, TestID -> "roundtrip-list"]

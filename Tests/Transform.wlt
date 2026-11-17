@@ -1,14 +1,6 @@
 (* Tests for PmMap, PmCommands, PmExpand, PmSimplify and PmFullSimplify. *)
 
-Needs["PMFunctions`"]
-
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 
 (* ::Section:: *)
@@ -22,9 +14,15 @@ VerificationTest[
 ]
 
 VerificationTest[
-	PmMap[#^2 &, PlusMinus[a, b], "Simplifier" -> Expand],
+	PmMap[#^2 &, PlusMinus[a, b]],
 	PlusMinus[a^2 + b^2, 2 a b],
 	TestID -> "PmMap-square"
+]
+
+VerificationTest[
+	PmMap[#^2 &, PlusMinus[a, b], "Simplifier" -> Identity],
+	PlusMinus[((a + b)^2 + (a - b)^2)/2, ((a + b)^2 - (a - b)^2)/2],
+	TestID -> "PmMap-simplifier-option"
 ]
 
 VerificationTest[
@@ -58,8 +56,8 @@ VerificationTest[
 ]
 
 VerificationTest[
-	PmCommands[PlusMinus[a, b], {Power, 2}, "Simplifier" -> Expand],
-	PlusMinus[a^2 + b^2, 2 a b],
+	PmCommands[PlusMinus[a, b], {Power, 2}, "Simplifier" -> Identity],
+	PlusMinus[((a + b)^2 + (a - b)^2)/2, ((a + b)^2 - (a - b)^2)/2],
 	TestID -> "PmCommands-simplifier-option"
 ]
 
@@ -88,7 +86,6 @@ VerificationTest[
 VerificationTest[
 	PmSimplify[PlusMinus[(a^2 - b^2)/(a - b), 2 Sin[x] Cos[x] - Sin[2 x] + c]],
 	PlusMinus[a + b, c],
-	SameTest -> pmSameQ,
 	TestID -> "PmSimplify-basic"
 ]
 
@@ -101,11 +98,18 @@ VerificationTest[
 VerificationTest[
 	PmSimplify[PlusMinus[Sqrt[x^2], y], x > 0],
 	PlusMinus[x, y],
-	TestID -> "WolframOnly:PmSimplify-positive-assumption"
+	TestID -> "PmSimplify-positive-assumption"
+]
+
+(* Simplify leaves Gamma[x + 1]/Gamma[x] alone; FullSimplify reduces it to x. *)
+VerificationTest[
+	PmFullSimplify[PlusMinus[Gamma[x + 1]/Gamma[x], 1]],
+	PlusMinus[x, 1],
+	TestID -> "PmFullSimplify-gamma"
 ]
 
 VerificationTest[
-	PmFullSimplify[PlusMinus[a, b]^2 - PlusMinus[a, b]^2],
-	0,
-	TestID -> "PmFullSimplify-zero"
+	PmFullSimplify[PlusMinus[Gamma[x + 1]/Gamma[x], Sqrt[y^2]], y > 0],
+	PlusMinus[x, y],
+	TestID -> "PmFullSimplify-assumptions"
 ]

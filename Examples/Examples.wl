@@ -52,4 +52,3 @@ show["x^2 - 2x - 1 == 0:", PmSolve[x^2 - 2 x - 1 == 0, x]];
 
 
 show["Is a \[PlusMinus] b the same as a \[MinusPlus] (-b)?", PmEqualQ[PlusMinus[a, b], MinusPlus[a, -b]]];
-show["Interval spanned by (1 \[PlusMinus] 2)^2:", PmToInterval[PlusMinus[1, 2]^2]];

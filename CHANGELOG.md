@@ -13,7 +13,6 @@ The single `PlusMinus.wl` file has become a paclet with tests and CI. Code that 
 - `PmEqualQ`: True/False version of `PmCompare`.
 - `PmFlip`: swaps ± and ∓.
 - `PmSolve`: runs `Solve` and merges a pair of solutions into one ± solution (quadratic formula and similar).
-- `PmToInterval`: the `Interval` spanned by the two branches of a numeric expression.
 - `"Simplifier"` option on every function that recombines branches. It defaults to `Simplify` (`Expand` for `PmExpand`).
 - Unary `±x`, n-ary `a ± b ± c` and nested `a ± (b ± c)` are now understood everywhere.
 - `PmArithmetic` is the correctly spelled name. `PmArithmatic` still works as an alias.

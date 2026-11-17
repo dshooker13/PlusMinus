@@ -1,17 +1,10 @@
 (* Tests for PmArithmetic, PmArithmatic (legacy name) and PmThread. *)
 
-Needs["PMFunctions`"]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 (* Two \[PlusMinus] expressions are "the same" if both are PlusMinus (or both are not)
    and their arguments agree after Simplify. This keeps tests independent of the exact
    form Simplify happens to return. *)
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
 
 
 (* ::Section:: *)
@@ -96,8 +89,8 @@ VerificationTest[
 ]
 
 VerificationTest[
-	PmThread[Power, PlusMinus[a, b], 2, "Simplifier" -> Expand],
-	PlusMinus[a^2 + b^2, 2 a b],
+	PmThread[Power, PlusMinus[a, b], 2, "Simplifier" -> Identity],
+	PlusMinus[((a + b)^2 + (a - b)^2)/2, ((a + b)^2 - (a - b)^2)/2],
 	TestID -> "PmThread-power-with-option"
 ]
 

@@ -27,7 +27,10 @@ $failedFiles = {};
 (* Number of VerificationTest calls written in a file, or $Failed if it doesn't parse. *)
 expectedCount[file_] := Module[{held},
 	(* The explicit "Package" format matters: auto-detection fails on some .wlt files. *)
-	held = Quiet[Import[file, {"Package", "HeldExpressions"}]];
+	(* Parse in a throwaway context so the symbols it creates don't shadow the test files' own. *)
+	held = Block[{$Context = "PMTestRunnerScratch`", $ContextPath = {"System`"}},
+		Quiet[Import[file, {"Package", "HeldExpressions"}]]
+	];
 	If[!ListQ[held] || MemberQ[held, $Failed], Return[$Failed]];
 	Count[held, HoldComplete[VerificationTest[___]] | HoldComplete[CompoundExpression[___, VerificationTest[___], ___]]]
 ]
