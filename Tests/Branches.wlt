@@ -198,3 +198,35 @@ VerificationTest[PmExpand[PlusMinus[0, 1]^2], 1, TestID -> "two-objects-square-c
 (* The order of the objects matters: a \[PlusMinus] b and a \[MinusPlus] b are different, which they wouldn't be as ranges. *)
 VerificationTest[PmEqualQ[PlusMinus[a, b], MinusPlus[a, b]], False, TestID -> "two-objects-are-ordered"]
 VerificationTest[Names["PMFunctions`*Interval*"], {}, TestID -> "no-interval-functions"]
+
+
+(* ::Section:: *)
+(*Values whose halves don't rebuild the branches*)
+
+
+(* An infinity reached through arithmetic or a Piecewise piece used to turn the finite branch into Indeterminate. *)
+VerificationTest[PmToList[PmMap[# /. t -> Infinity &, y - PlusMinus[1, 1] x t]] /. {x -> 1, y -> 3}, {-Infinity, 3}, TestID -> "nested-infinity-kept"]
+VerificationTest[PmFromList[{y - x Infinity, y}], PmBranches[y - x Infinity, y], TestID -> "infinity-in-a-product-term"]
+VerificationTest[Quiet[PmToList[PmMap[PiecewiseExpand[1/Max[#, 0]] &, PlusMinus[a, 1]]] /. a -> 1/2], {2/3, ComplexInfinity}, TestID -> "infinite-piecewise-piece"]
+VerificationTest[PmFromList[{Overflow[], 1}], PmBranches[Overflow[], 1], TestID -> "overflow-branch"]
+
+(* Machine numbers of very different size: the halves cancel, so the branches are kept. *)
+VerificationTest[PmToList[PmFromList[{1.*^20, 1.}]], {1.*^20, 1.}, TestID -> "machine-numbers-very-different-size"]
+VerificationTest[PmFromList[{3., 1.}], PlusMinus[2., 1.], TestID -> "machine-numbers-ordinary"]
+(* Averaging the two inexact roots leaves -1.1*10^-16 of rounding noise as the base; it is dropped. *)
+VerificationTest[With[{v = x /. First[PmSolve[x^2 - 2. == 0, x]]}, {Head[v], Length[v], Abs[v[[1]] - Sqrt[2.]] < 10^-14}], {PlusMinus, 1, True}, TestID -> "no-rounding-noise-base"]
+
+(* Around and nested Interval objects don't rebuild under arithmetic. *)
+VerificationTest[PmFromList[{Around[1, 0.1], Around[3, 0.3]}], PmBranches[Around[1, 0.1], Around[3, 0.3]], TestID -> "Around-branches-kept"]
+VerificationTest[Head[PmFromList[{Sqrt[x + Interval[{0, 1}]], Sqrt[x + Interval[{1, 2}]]}]], PmBranches, TestID -> "nested-Interval-kept"]
+VerificationTest[Head[PmFromList[{DateObject[{2024, 1, 1}], DateObject[{2024, 1, 3}]}]], PmBranches, TestID -> "DateObject-branches-kept"]
+VerificationTest[PmFromList[{Quantity[1, "Meters"], Quantity[1, "Meters"]}], Quantity[1, "Meters"], TestID -> "equal-Quantity-branches"]
+VerificationTest[PmFromList[{Quantity[3, "Meters"], Quantity[1, "Meters"]}], PlusMinus[Quantity[2, "Meters"], Quantity[1, "Meters"]], TestID -> "Quantity-branches"]
+
+(* The left side of a rule is matched literally, so it is never simplified. *)
+VerificationTest[PmFromList[{(x^2 - 1)/(x - 1) -> a, (x^2 - 1)/(x - 1) -> b}], (x^2 - 1)/(x - 1) -> PlusMinus[(a + b)/2, (a - b)/2], TestID -> "rule-key-kept-literally"]
+
+(* Truth values inside And/Or are kept apart, never averaged. *)
+VerificationTest[PmFromList[{p && q, r && q}], PmBranches[p, r] && q, TestID -> "logical-operands-kept-apart"]
+VerificationTest[PmToList[PmFromList[{p && q, r && q}]] /. {p -> True, r -> False, q -> True}, {True, False}, TestID -> "logical-operands-evaluate"]
+VerificationTest[PmSimplify[PlusMinus[x, 1] > 0 && y > 0], PlusMinus[x, 1] > 0 && y > 0, TestID -> "relations-in-logical-still-combined"]

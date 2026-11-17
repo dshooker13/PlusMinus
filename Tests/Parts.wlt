@@ -115,3 +115,14 @@ VerificationTest[PmFlip[Function[x, PlusMinus[x, 1]]], Function[x, MinusPlus[x, 
 VerificationTest[PmFlip[Hold[PmBranches[1 + 1, PmBranches[a, b]]]], Hold[PmBranches[PmBranches[b, a], 1 + 1]], TestID -> "PmFlip-held-nested-PmBranches"]
 VerificationTest[PmFlip[PmFlip[Hold[PlusMinus[a, MinusPlus[b, c]]]]], Hold[PlusMinus[a, MinusPlus[b, c]]], TestID -> "PmFlip-twice-held"]
 VerificationTest[PmToList[PmFlip[SparseArray[{1 -> PlusMinus[a, b]}, 2]]], {{a - b, 0}, {a + b, 0}}, TestID -> "PmFlip-SparseArray"]
+
+
+(* ::Section:: *)
+(*Branches of different shapes have no parts*)
+
+
+VerificationTest[PmParts[PmBranches[{1, 2}, 3]], $Failed, {PmParts::nobase}, TestID -> "PmParts-list-and-scalar"]
+VerificationTest[PmBase[PmBranches[{1, 2}, {1, 2, 3}]], $Failed, {PmBase::nobase}, TestID -> "PmBase-lists-of-different-length"]
+VerificationTest[PmCompare[PmBranches[{1, 2}, 3], PmBranches[{1, 2}, {3, 3}]], $Failed, {PmCompare::nobase}, TestID -> "PmCompare-different-shapes"]
+VerificationTest[PmParts[PmBranches[1.*^20, 1.]], $Failed, {PmParts::nobase}, TestID -> "PmParts-cancelling-machine-numbers"]
+VerificationTest[PmParts[PmBranches[{1, 2}, {3, 4}]], {{2, 3}, {-1, -1}}, TestID -> "PmParts-lists-of-same-length"]

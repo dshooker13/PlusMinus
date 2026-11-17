@@ -180,12 +180,18 @@ simplifier[f_, {opts___}] := OptionValue[f, Flatten[{opts}], "Simplifier"]
 
 halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
 
-(* zeroQ also catches inexact zeros such as 0., so PmFromList[{1.5, 1.5}] gives 1.5, not 1.5 \[PlusMinus] 0. *)
+(* zeroQ also catches inexact zeros such as 0. and zero quantities, so PmFromList[{1.5, 1.5}]
+   gives 1.5 rather than 1.5 \[PlusMinus] 0., and equal Quantity branches don't get "\[PlusMinus] 0 m". *)
+zeroQ[e_Quantity] := zeroQ[QuantityMagnitude[e]]
 zeroQ[e_] := e === 0 || (NumericQ[e] && TrueQ[e == 0])
 
+(* With machine numbers, averaging two roots like {Sqrt[2.], -Sqrt[2.]} leaves rounding noise
+   (-1.1*10^-16) in one half. A half that is below the precision of the other is noise. *)
+noiseQ[e_, other_] := MachineNumberQ[e] && MachineNumberQ[other] && Abs[e] <= 10 $MachineEpsilon Abs[other]
+
 combine[{base_, pm_}] := Which[
-	zeroQ[pm], base,
-	zeroQ[base], PlusMinus[pm],
+	zeroQ[pm] || noiseQ[pm, base], base,
+	zeroQ[base] || noiseQ[base, pm], PlusMinus[pm],
 	True, PlusMinus[base, pm]
 ]
 
@@ -202,8 +208,8 @@ combine[{base_, pm_}] := Which[
      different conditions, Simplify merges the halves under both conditions, so a valid
      branch becomes Undefined. (Branches with the same condition are combined under it.)
    - Everything else is halved and simplified. *)
-$relationalHeads = Equal | Unequal | Less | LessEqual | Greater | GreaterEqual | Inequality |
-	And | Or | Not | Xor | Nand | Nor | Implies | Equivalent;
+$logicalHeads = And | Or | Not | Xor | Nand | Nor | Implies | Equivalent;
+$relationalHeads = Equal | Unequal | Less | LessEqual | Greater | GreaterEqual | Inequality | $logicalHeads;
 $structuralHeads = List | Rule | $relationalHeads;
 
 sameStructureQ[p_Association, m_Association] := Sort[Keys[p]] === Sort[Keys[m]]
@@ -216,11 +222,29 @@ sameStructureQ[p_, m_] := Head[p] === Head[m] && MatchQ[Head[p], $structuralHead
 
 (* Values that can't be halved. Only the value itself and its top-level terms are checked:
    an Infinity deep inside, as in f[Infinity] or a series at Infinity, is harmless. *)
-$nonFinite = _DirectedInfinity | Indeterminate | Undefined | _ConditionalExpression | _Interval | _Overflow | _Underflow;
-$nonValue = True | False | $Failed | _Missing | _String | _Association | _RuleDelayed |
+(* Values that can't be halved and rebuilt exactly:
+   - non-finite values, found through arithmetic (y + x Infinity) and Piecewise pieces, but
+     not inside other functions: f[Infinity] or a series at Infinity is harmless.
+     Overflow[] and Underflow[] evaluate to special Reals, so they are compared with SameQ.
+   - objects whose arithmetic doesn't undo exactly, anywhere in the value: Interval and
+     CenteredInterval widen, Around combines errors as if they were independent.
+   - things that aren't values at all. *)
+$nonFinite = _DirectedInfinity | Indeterminate | Undefined | _ConditionalExpression;
+$inexactObjects = _Interval | _CenteredInterval | _Around;
+$nonValue = True | False | $Failed | _Missing | _String | _Association | _RuleDelayed | _DateObject |
 	_Element | _NotElement | _Exists | _ForAll | $structuralHeads[___];
 
-unsafeQ[e_] := MatchQ[e, $nonFinite | $nonValue] || (MatchQ[e, _Plus | _Times] && MemberQ[List @@ e, $nonFinite])
+nonFiniteQ[e_] := MatchQ[e, $nonFinite] || e === Overflow[] || e === Underflow[] ||
+	(MatchQ[e, _Plus | _Times | _Power] && AnyTrue[List @@ e, nonFiniteQ]) ||
+	(MatchQ[e, _Piecewise] && AnyTrue[Append[e[[1, All, 1]], If[Length[e] > 1, e[[2]], 0]], nonFiniteQ])
+
+unsafeQ[e_] := MatchQ[e, $nonValue] || nonFiniteQ[e] || !FreeQ[e, $inexactObjects]
+
+(* Halving two machine numbers of very different size cancels: {1.*^20, 1.} would give
+   5.*^19 \[PlusMinus] 5.*^19, whose "-" branch is 0. If the halves don't rebuild the branches,
+   the branches are kept apart. Exact values always rebuild, so only inexact numbers are checked. *)
+rebuildsQ[{p_, m_}, {base_, pm_}] := !(NumericQ[p] && NumericQ[m] && Precision[{p, m}] < Infinity) ||
+	TrueQ[base + pm == p && base - pm == m]
 
 recombine[{p_, m_}, _] /; p === m && unsafeQ[p] := p
 recombine[{p_Association, m_Association}, simp_] /; sameStructureQ[p, m] :=
@@ -228,15 +252,28 @@ recombine[{p_Association, m_Association}, simp_] /; sameStructureQ[p, m] :=
 recombine[{p : $relationalHeads[___], m_}, simp_] /; sameStructureQ[p, m] := With[{sp = simp[p], sm = simp[m]},
 	If[MatchQ[sp, True | False] || MatchQ[sm, True | False],
 		If[sp === sm, sp, PmBranches[sp, sm]],
-		Head[p] @@ MapThread[recombine[{#1, #2}, simp] &, {List @@ p, List @@ m}]
+		Head[p] @@ MapThread[If[MatchQ[Head[p], $logicalHeads], logicalOperand, recombine][{#1, #2}, simp] &, {List @@ p, List @@ m}]
 	]
 ]
+
+(* An operand of And, Or, ... is a truth value. Two different ones are kept apart rather than
+   averaged ((p + r)/2 \[PlusMinus] (p - r)/2 is meaningless for truth values); relations inside are
+   combined as usual. *)
+logicalOperand[{a_, b_}, simp_] := Which[
+	a === b, a,
+	sameStructureQ[a, b], recombine[{a, b}, simp],
+	True, PmBranches[simp[a], simp[b]]
+]
+(* The left side of a rule is a pattern to match, not a value: it is kept exactly as it is. *)
+recombine[{Rule[k_, v1_], Rule[k_, v2_]}, simp_] := Rule[k, recombine[{v1, v2}, simp]]
 recombine[{p_, m_}, simp_] /; sameStructureQ[p, m] :=
 	Head[p] @@ MapThread[recombine[{#1, #2}, simp] &, {List @@ p, List @@ m}]
 recombine[{ConditionalExpression[p_, c_], ConditionalExpression[m_, c_]}, simp_] :=
 	ConditionalExpression[recombine[{p, m}, simp], c]
 recombine[{p_, m_}, simp_] /; unsafeQ[p] || unsafeQ[m] := PmBranches[simp[p], simp[m]]
-recombine[{p_, m_}, simp_] := combine[halves[{p, m}, simp]]
+recombine[{p_, m_}, simp_] := With[{h = halves[{p, m}, simp]},
+	If[rebuildsQ[{p, m}, h], combine[h], PmBranches[simp[p], simp[m]]]
+]
 
 Options[PmFromList] = $simplifierOptions;
 
@@ -252,11 +289,13 @@ PmFromList[other : Except[{_, _}], ___?simplifierOptionQ] := (Message[PmFromList
 (* A base and a \[PlusMinus] part exist only when both branches are ordinary values, or lists of
    them. For anything else (an infinite branch, equations, rules, PmBranches of such) the
    halves would be meaningless, so these functions give General::nobase and $Failed. *)
-splittableQ[e_List] := AllTrue[e, splittableQ]
-splittableQ[e_] := !unsafeQ[e]
+(* The pair is checked, not each branch alone: a list branch with a scalar branch, or lists of
+   different lengths, would otherwise be broadcast or fail inside Plus. *)
+splittableQ[{p_List, m_List}] := Length[p] === Length[m] && And @@ MapThread[splittableQ[{#1, #2}] &, {p, m}]
+splittableQ[{p_, m_}] := !ListQ[p] && !ListQ[m] && !unsafeQ[p] && !unsafeQ[m] && rebuildsQ[{p, m}, halves[{p, m}, Identity]]
 
 parts[f_, expr_, simp_] := With[{b = branches[expr]},
-	If[AllTrue[b, splittableQ], halves[b, simp], Message[MessageName[f, "nobase"], Short[b]]; $Failed]
+	If[splittableQ[b], halves[b, simp], Message[MessageName[f, "nobase"], Short[b]]; $Failed]
 ]
 
 Options[PmParts] = $simplifierOptions;
