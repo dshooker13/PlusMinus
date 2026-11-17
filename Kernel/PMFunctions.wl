@@ -89,15 +89,16 @@ PmSimplify[expr, assum] simplifies using assumptions, and PmSimplify[expr, assum
 
 PmFullSimplify::usage = "PmFullSimplify[expr], PmFullSimplify[expr, assum] and PmFullSimplify[expr, assum, opts] work like PmSimplify, but use FullSimplify.";
 
-PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified. If an expression can't be split into a base and a \[PlusMinus] part (see PmParts), it gives a message and $Failed; PmEqualQ can still compare such expressions.";
+PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified. If an expression can't be split into a base and a \[PlusMinus] part (see PmParts), it gives a message and $Failed; PmEqualQ can still compare such expressions.
+The option \"Simplifier\" (default: Simplify with a 5 second limit) is used for the parts and the comparisons.";
 
-PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if Simplify can prove that the two expressions have equal branches, and False otherwise. False means \"not proven equal\", not \"proven different\". Branches are compared in order, so a \[PlusMinus] b and a \[MinusPlus] b are different unless b is 0. Simplify uses generic rules, so (x^2 - 1)/(x - 1) counts as equal to x + 1.";
+PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if Simplify can prove, within 5 seconds per branch, that the two expressions have equal branches, and False otherwise. False means \"not proven equal\", not \"proven different\". Branches are compared in order, so a \[PlusMinus] b and a \[MinusPlus] b are different unless b is 0. Simplify uses generic rules, so (x^2 - 1)/(x - 1) counts as equal to x + 1.";
 
 PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[PlusMinus] into \[MinusPlus] and vice versa.";
 
 PmSolve::usage = "PmSolve[eqns, vars] solves eqns with Solve and, when there are exactly two solutions, merges them into a single \[PlusMinus] solution.
-PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.
-If eqns already contain \[PlusMinus], each branch is solved separately. Solutions that don't depend on the sign are returned as they are; the others are paired, a solution of the \"+\" equations with one of the \"-\" equations, ordered by numeric value when possible. Each pair is a valid solution for the equations' sign, but the pairing is one choice among several. PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns two \[PlusMinus] solutions, one with branches -Sqrt[5] and -Sqrt[3] and one with Sqrt[5] and Sqrt[3].";
+PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Extra arguments are passed on to Solve, except the option \"Simplifier\" (default: Simplify with a 5 second limit), which is used to merge solutions.
+If eqns already contain \[PlusMinus], each branch is solved separately. Repeated roots count once, and solutions that don't depend on the sign are returned as they are. The others are paired, a solution of the \"+\" equations with one of the \"-\" equations: real before complex, then by numeric value when possible. Each pair is a valid solution for the equations' sign, but the pairing is one choice among several. PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns two \[PlusMinus] solutions, one with branches -Sqrt[5] and -Sqrt[3] and one with Sqrt[5] and Sqrt[3]. If a branch has no solutions, the result is PmBranches[sols+, sols-].";
 
 
 
@@ -154,7 +155,9 @@ branch[expr_, s_] := normalizeSparse[expr] //. branchRules[s]
    definition for a public symbol can't change how the rest of the package behaves. *)
 branches[expr_] := {branch[expr, 1], branch[expr, -1]}
 
-PmQ[expr_] := !FreeQ[normalizeSparse[expr], _PlusMinus | _MinusPlus | _PmBranches]
+pmQ[expr_] := !FreeQ[normalizeSparse[expr], _PlusMinus | _MinusPlus | _PmBranches]
+
+PmQ[expr_] := pmQ[expr]
 
 PmToList[expr_] := branches[expr]
 
@@ -166,7 +169,8 @@ PmToList[expr_] := branches[expr]
 (* The default simplifier gives up after 5 seconds per half and returns that half as it is.
    Plain Simplify can take minutes on small inputs: a three-term trigonometric sum took 50 s.
    Use "Simplifier" -> Simplify for no limit, or Identity to skip simplifying. *)
-$simplifierOptions = {"Simplifier" -> (TimeConstrained[Simplify[#], 5, #] &)};
+$defaultSimplifier = TimeConstrained[Simplify[#], 5, #] &;
+$simplifierOptions = {"Simplifier" -> $defaultSimplifier};
 
 (* Only "Simplifier" -> f counts as an option. A general OptionsPattern[] after args___
    would also swallow a trailing data argument that happens to be a rule, as in
@@ -370,14 +374,21 @@ PmFullSimplify[expr_, assum : Repeated[Except[_?OptionQ], {0, 1}], opts : Option
 (*Comparing*)
 
 
+(* PmCompare and PmEqualQ simplify with the same 5 second limit as the default simplifier:
+   plain Simplify took over 100 s on a small trigonometric sum. A comparison that isn't
+   decided in time stays an unevaluated equation (PmCompare) or counts as not proven (PmEqualQ). *)
+Options[PmCompare] = $simplifierOptions;
+
 (* MapThread rather than Thread[l1 == l2]: identical lists would make l1 == l2 evaluate to a single True. *)
-PmCompare[x_, y_] := With[{px = parts[PmCompare, x, Simplify], py = parts[PmCompare, y, Simplify]},
-	If[px === $Failed || py === $Failed, $Failed, Simplify[MapThread[Equal, {px, py}]]]
+PmCompare[x_, y_, opts___?simplifierOptionQ] := With[{simp = simplifier[PmCompare, {opts}]},
+	With[{px = parts[PmCompare, x, simp], py = parts[PmCompare, y, simp]},
+		If[px === $Failed || py === $Failed, $Failed, simp /@ MapThread[Equal, {px, py}]]
+	]
 ]
 
 (* Branches are compared directly rather than through PmCompare's parts, so expressions
    with an infinite branch, equations or PmBranches can still be compared. *)
-PmEqualQ[x_, y_] := x === y || TrueQ[And @@ Simplify[MapThread[Equal, {branches[x], branches[y]}]]]
+PmEqualQ[x_, y_] := x === y || AllTrue[MapThread[Equal, {branches[x], branches[y]}], TrueQ[$defaultSimplifier[#]] &]
 
 
 (* ::Section:: *)
@@ -400,14 +411,24 @@ ruleListsQ[sols_] := MatchQ[sols, {{(_Rule) ..} ..}]
    the first nonzero \[PlusMinus] part has no leading minus sign: x -> 1 \[PlusMinus] Sqrt[2] rather
    than x -> 1 \[PlusMinus] -Sqrt[2]. The same order is used for every variable, so the signs stay
    correlated between variables. *)
-mergePair[{sol1_, sol2_}] := Module[{keys = sol1[[All, 1]], pair, pms},
+mergePair[{sol1_, sol2_}, simp_] := Module[{keys = sol1[[All, 1]], pair, pms},
 	pair = {keys /. sol1, keys /. sol2};
-	pms = MapThread[Last[halves[{#1, #2}, Simplify]] &, pair];
+	pms = MapThread[Last[halves[{#1, #2}, simp]] &, pair];
 	If[leadingMinusQ[SelectFirst[pms, # =!= 0 &, 0]], pair = Reverse[pair]];
-	{MapThread[#1 -> recombine[{#2, #3}, Simplify] &, {keys, pair[[1]], pair[[2]]}]}
+	{MapThread[#1 -> recombine[{#2, #3}, simp] &, {keys, pair[[1]], pair[[2]]}]}
 ]
 
-PmSolve[eqns_, vars_, rest___] /; !PmQ[eqns] := Module[{sols = Solve[eqns, vars, rest]},
+(* "Simplifier" -> f is PmSolve's own option; every other extra argument goes to Solve. *)
+Options[PmSolve] = $simplifierOptions;
+
+PmSolve[eqns_, vars_, rest___] /; AnyTrue[{rest}, simplifierOptionQ] :=
+	Block[{$solveSimplifier = simplifier[PmSolve, Select[{rest}, simplifierOptionQ]]},
+		PmSolve[eqns, vars, Sequence @@ Select[{rest}, !simplifierOptionQ[#] &]]
+	]
+
+$solveSimplifier := simplifier[PmSolve, {}]
+
+PmSolve[eqns_, vars_, rest___] /; !pmQ[eqns] := Module[{sols = Solve[eqns, vars, rest]},
 	Which[
 		(* Solve couldn't solve it and has already said why. *)
 		!ListQ[sols], sols,
@@ -415,7 +436,7 @@ PmSolve[eqns_, vars_, rest___] /; !PmQ[eqns] := Module[{sols = Solve[eqns, vars,
 			Message[PmSolve::nopair, Length[sols]]; sols,
 		Sort[sols[[1, All, 1]]] =!= Sort[sols[[2, All, 1]]],
 			Message[PmSolve::vars, sols[[1, All, 1]], sols[[2, All, 1]]]; sols,
-		True, mergePair[SortBy[#, First] & /@ sols]
+		True, mergePair[SortBy[#, First] & /@ sols, $solveSimplifier]
 	]
 ]
 
@@ -423,24 +444,32 @@ PmSolve[eqns_, vars_, rest___] /; !PmQ[eqns] := Module[{sols = Solve[eqns, vars,
    sign to the sign merging Solve's pair of roots, and lose half the solutions. Instead each
    branch is solved and the solutions are paired: a solution of the "+" equation with one
    of the "-" equation, so every pair is a valid solution for the equations' sign.
-   - Solutions found on both branches don't depend on the sign and are returned as they are.
-   - The rest are paired in order of their numeric values (real part, then imaginary part)
-     when they are numeric, so real roots pair with real roots; otherwise in Solve's order.
-     Any such pairing is valid; it is one choice among several.
-   - If the branches have different numbers of remaining solutions, or the paired solutions
-     are for different variables, they can't be paired: the result is PmBranches[sols+, sols-]. *)
-rootOrder[sol_] := With[{v = N[sol[[All, 2]]]}, If[VectorQ[v, NumericQ], {0, Re[v], Im[v]}, {1}]]
+   - Repeated roots are counted once, and solutions found on both branches don't depend on
+     the sign: they are returned as they are.
+   - The rest are paired in order: real solutions before complex ones, then by real part and
+     imaginary part, when they are numeric; otherwise in Solve's order. Any such pairing is
+     valid; it is one choice among several.
+   - If one branch has more remaining solutions than the other, its extra ones are paired with
+     solutions of the other branch that were already used (each pair is still valid, and every
+     solution still appears).
+   - If a branch has no solutions at all, or paired solutions are for different variables,
+     nothing can be paired: the result is PmBranches[sols+, sols-]. *)
+rootOrder[sol_] := With[{v = N[sol[[All, 2]]]},
+	If[VectorQ[v, NumericQ], {0, Boole[Max[Abs[Im[v]]] > 10^-10], Re[v], Im[v]}, {1}]
+]
 
-PmSolve[eqns_, vars_, rest___] /; PmQ[eqns] := Module[{sols, plus, minus, common},
+padTo[list_, n_, pool_] := If[Length[list] >= n, list, Join[list, PadRight[{}, n - Length[list], pool]]]
+
+PmSolve[eqns_, vars_, rest___] /; pmQ[eqns] := Module[{sols, plus, minus, common, n},
 	sols = Solve[#, vars, rest] & /@ branches[eqns];
-	If[!AllTrue[sols, ListQ], Return[PmBranches @@ sols]];
-	{plus, minus} = Map[SortBy[#, First] &, sols, {2}];
+	If[!AllTrue[sols, ListQ] || MemberQ[sols, {}], Return[PmBranches @@ sols]];
+	{plus, minus} = DeleteDuplicates /@ Map[SortBy[#, First] &, sols, {2}];
 	common = Select[plus, MemberQ[minus, #] &];
-	{plus, minus} = Select[#, !MemberQ[common, #] &] & /@ {plus, minus};
-	If[Length[plus] =!= Length[minus], Return[PmBranches @@ sols]];
-	{plus, minus} = SortBy[#, rootOrder] & /@ {plus, minus};
+	{plus, minus} = SortBy[Select[#, !MemberQ[common, #] &], rootOrder] & /@ {plus, minus};
+	n = Max[Length[plus], Length[minus]];
+	{plus, minus} = {padTo[plus, n, Join[common, plus]], padTo[minus, n, Join[common, minus]]};
 	If[!And @@ MapThread[#1[[All, 1]] === #2[[All, 1]] &, {plus, minus}], Return[PmBranches @@ sols]];
-	Join[common, MapThread[recombine[{#1, #2}, Simplify] &, {plus, minus}]]
+	Join[common, MapThread[recombine[{#1, #2}, $solveSimplifier] &, {plus, minus}]]
 ]
 
 
@@ -467,10 +496,10 @@ $signatures = {
 	PmExpand -> {"PmExpand[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
 	PmSimplify -> {"PmSimplify[expr], PmSimplify[expr, assum] or PmSimplify[expr, assum, opts] with Simplify options", {_, _., OptionsPattern[]}},
 	PmFullSimplify -> {"PmFullSimplify[expr], PmFullSimplify[expr, assum] or PmFullSimplify[expr, assum, opts] with FullSimplify options", {_, _., OptionsPattern[]}},
-	PmCompare -> {"PmCompare[expr1, expr2]", {_, _}},
+	PmCompare -> {"PmCompare[expr1, expr2, \"Simplifier\" -> f]", {_, _, OptionsPattern[]}},
 	PmEqualQ -> {"PmEqualQ[expr1, expr2]", {_, _}},
 	PmFlip -> {"PmFlip[expr]", {_}},
-	PmSolve -> {"PmSolve[eqns, vars, ...]", {_, _, ___}}
+	PmSolve -> {"PmSolve[eqns, vars, ..., \"Simplifier\" -> f]", {_, _, ___}}
 };
 
 badCall[f_, call_, expected_] := (Message[MessageName[f, "pmargs"], call, expected]; False)

@@ -129,3 +129,40 @@ VerificationTest[
 
 (* Paired solutions for different variables can't be merged. *)
 VerificationTest[Head[Quiet[PmSolve[x + PlusMinus[1, 1] y == 1, {x, y}]]], PmBranches, TestID -> "PmSolve-sign-different-variables"]
+
+
+(* ::Section:: *)
+(*Repeated roots, pairing order, options*)
+
+
+(* A repeated root used to leave the branches with different counts, so nothing was paired. *)
+VerificationTest[PmSolve[x^2 == PlusMinus[1, 1] x, x], {{x -> 0}, {x -> PlusMinus[1, 1]}}, TestID -> "PmSolve-repeated-root"]
+VerificationTest[PmSolve[(x - 1) (x - PlusMinus[2, 1]) == 0, x], {{x -> 1}, {x -> PlusMinus[2, 1]}}, TestID -> "PmSolve-repeated-root-common"]
+
+(* Real roots are paired with real roots, before complex ones. *)
+VerificationTest[
+	Simplify[PmToList[x /. PmSolve[(x - PlusMinus[1, 1]) (x - PlusMinus[2 I, 3]) == 0, x]]],
+	{{2, 3 + 2 I}, {0, -3 + 2 I}},
+	TestID -> "PmSolve-real-roots-before-complex"
+]
+
+(* The sign choice in ordinary merging: first nonzero \[PlusMinus] part, conditions, complex roots. *)
+VerificationTest[PmSolve[{x == 1, y^2 == 4}, {x, y}], {{x -> 1, y -> PlusMinus[2]}}, TestID -> "PmSolve-sign-from-first-nonzero-part"]
+VerificationTest[PmSolve[x^2 == a, x, Reals], {{x -> ConditionalExpression[PlusMinus[Sqrt[a]], a > 0]}}, TestID -> "PmSolve-sign-inside-condition"]
+VerificationTest[PmSolve[x^2 + 1. == 0, x], {{x -> PlusMinus[0. + 1. I]}}, TestID -> "PmSolve-sign-inexact-imaginary"]
+VerificationTest[PmPm[x /. First[PmSolve[x (x - (2 - 2 Sqrt[2])) == 0, x]]], -1 + Sqrt[2], TestID -> "PmSolve-sign-of-sum"]
+
+(* A branch that Solve can't solve gives PmBranches, never a list of garbage. *)
+VerificationTest[Head[Quiet[PmSolve[Sin[x] + x^x == Cos[x^2 + x] + PlusMinus[0, 1], x]]], PmBranches, TestID -> "PmSolve-unsolvable-branch"]
+
+(* "Simplifier" is PmSolve's own option, not passed to Solve. *)
+VerificationTest[PmSolve[x^2 - 2 x - 1 == 0, x, "Simplifier" -> Identity], {{x -> PlusMinus[1, Sqrt[2]]}}, SameTest -> (Simplify[#1 - #2] === {{0}} || Simplify[PmToList[x /. First[#1]] - PmToList[x /. First[#2]]] === {0, 0} &), TestID -> "PmSolve-Simplifier-option"]
+VerificationTest[PmSolve[x^2 + 1 == 0, x, Reals, "Simplifier" -> Identity], {}, {PmSolve::nopair}, TestID -> "PmSolve-Simplifier-option-with-domain"]
+
+(* Internal code doesn't go through the public PmQ, so a user definition can't change PmSolve. *)
+VerificationTest[
+	Unprotect[PmQ]; PmQ[_] := False; Protect[PmQ];
+	Length[PmSolve[x^2 == PlusMinus[4, 1], x]],
+	2,
+	TestID -> "PmSolve-does-not-use-public-PmQ"
+]
