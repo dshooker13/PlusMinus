@@ -268,12 +268,15 @@ PmBase[expr_, opts___?simplifierOptionQ] := Replace[parts[PmBase, expr, simplifi
 Options[PmPm] = $simplifierOptions;
 PmPm[expr_, opts___?simplifierOptionQ] := Replace[parts[PmPm, expr, simplifier[PmPm, {opts}]], {_, pm_} :> pm]
 
-(* Flipping maps s to -s: swap \[PlusMinus] and \[MinusPlus], and swap the arguments of PmBranches. *)
-flip[expr_] := expr /. {
-	PlusMinus[a___] :> MinusPlus @@ (flip /@ {a}),
-	MinusPlus[a___] :> PlusMinus @@ (flip /@ {a}),
-	PmBranches[p_, m_] :> PmBranches[flip[m], flip[p]]
-}
+(* Flipping maps s to -s: swap \[PlusMinus] and \[MinusPlus], and swap the arguments of PmBranches.
+   The heads are swapped through temporary symbols, and every replacement is a literal, so it
+   also works inside held expressions (Hold, Function, the right side of :>), where nothing
+   on the right-hand side of a rule would be evaluated. //. reaches PmBranches nested inside
+   the arguments of another one. *)
+flip[expr_] := Module[{pm, mp, br},
+	normalizeSparse[expr] /. {PlusMinus -> mp, MinusPlus -> pm, PmBranches -> br} /.
+		{mp -> MinusPlus, pm -> PlusMinus} //. br[p_, m_] :> PmBranches[m, p] /. br -> PmBranches
+]
 
 PmFlip[expr_] := flip[expr]
 

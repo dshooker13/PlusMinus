@@ -101,3 +101,17 @@ VerificationTest[PmPm[x -> PlusMinus[a, b]], $Failed, {PmPm::nobase}, TestID -> 
 VerificationTest[PmCompare[PmBranches[1, Infinity], PmBranches[2, Infinity]], $Failed, {PmCompare::nobase, PmCompare::nobase}, TestID -> "PmCompare-infinite-branches"]
 VerificationTest[PmEqualQ[PmBranches[1, Infinity], PmBranches[2, Infinity]], False, TestID -> "PmEqualQ-infinite-branches-differ"]
 VerificationTest[PmParts[{PlusMinus[a, b], c}], {{a, c}, {b, 0}}, TestID -> "PmParts-list-of-values"]
+
+
+(* ::Section:: *)
+(*PmFlip in held expressions and arrays*)
+
+
+(* Flipping used to leave unevaluated private code inside held expressions, losing the sign. *)
+VerificationTest[PmFlip[Hold[PlusMinus[a, b]]], Hold[MinusPlus[a, b]], TestID -> "PmFlip-Hold"]
+VerificationTest[PmToList[PmFlip[HoldForm[PlusMinus[a, b]]]], {HoldForm[a - b], HoldForm[a + b]}, TestID -> "PmFlip-HoldForm-branches"]
+VerificationTest[PmFlip[x :> PlusMinus[a, b]], x :> MinusPlus[a, b], TestID -> "PmFlip-RuleDelayed"]
+VerificationTest[PmFlip[Function[x, PlusMinus[x, 1]]], Function[x, MinusPlus[x, 1]], TestID -> "PmFlip-Function"]
+VerificationTest[PmFlip[Hold[PmBranches[1 + 1, PmBranches[a, b]]]], Hold[PmBranches[PmBranches[b, a], 1 + 1]], TestID -> "PmFlip-held-nested-PmBranches"]
+VerificationTest[PmFlip[PmFlip[Hold[PlusMinus[a, MinusPlus[b, c]]]]], Hold[PlusMinus[a, MinusPlus[b, c]]], TestID -> "PmFlip-twice-held"]
+VerificationTest[PmToList[PmFlip[SparseArray[{1 -> PlusMinus[a, b]}, 2]]], {{a - b, 0}, {a + b, 0}}, TestID -> "PmFlip-SparseArray"]
