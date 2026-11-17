@@ -39,7 +39,7 @@ Every function follows the same three steps:
 Some branches can't be recombined that way:
 
 - **Equations, inequalities, logical combinations, rules with the same left side, lists and associations** of the same shape are combined element by element. `PmSimplify[a ± b == c]` gives `a ± b == c`. If a relation simplifies to `True` or `False` on a branch, it is decided rather than rewritten.
-- **Infinite branches, branches with different conditions, Booleans, strings, `Interval` objects, `$Failed`, and rules with different left sides** are kept as `PmBranches[p, m]`. For example, `PmArithmetic[2, 1 ± 1, Divide]` gives `PmBranches[1, ComplexInfinity]`, because averaging an infinite branch with a finite one would lose the finite one. Branches with the same condition are combined under it.
+- **Infinite branches, branches with different conditions, Booleans, strings, `Interval` and `Around` objects, dates, `$Failed`, rules with different left sides, and machine numbers whose halves would cancel** are kept as `PmBranches[p, m]`. In general: whenever `(p + m)/2 ± (p - m)/2` would not give back exactly `p` and `m`. For example, `PmArithmetic[2, 1 ± 1, Divide]` gives `PmBranches[1, ComplexInfinity]`, because averaging an infinite branch with a finite one would lose the finite one. Branches with the same condition are combined under it.
 
 The functions that work branch by branch (`PmToList`, `PmMap`, `PmSimplify`, `PmFlip`, `PmEqualQ` and so on) understand `PmBranches`, so you can keep working with the result. `PmParts`, `PmBase`, `PmPm` and `PmCompare` give a `::nobase` message and `$Failed` instead, because such branches have no base and ± part.
 
@@ -109,7 +109,7 @@ The braces around `{Normal}` are required. For a single function, `PmMap` is sho
 
 ### The "Simplifier" option
 
-Every function that recombines branches (`PmFromList`, `PmParts`, `PmBase`, `PmPm`, `PmMap`, `PmThread`, `PmArithmetic`, `PmCommands`, `PmExpand`) accepts `"Simplifier" -> f`. `f` is applied to both halves of the result.
+Every function that recombines branches (`PmFromList`, `PmParts`, `PmBase`, `PmPm`, `PmMap`, `PmThread`, `PmArithmetic`, `PmCommands`, `PmExpand`), and also `PmCompare` and `PmSolve`, accepts `"Simplifier" -> f`. `f` is applied to both halves of the result. Functions with a fixed number of arguments also accept the option in a list, or an empty list `{}`.
 
 The default is `Simplify` with a 5 second limit per half: if `Simplify` takes longer, that half is returned unsimplified. (`PmExpand` uses `Expand`.) Use `"Simplifier" -> Simplify` for no time limit, `Identity` to skip simplifying large expressions, or `FullSimplify` for harder cases:
 
@@ -119,7 +119,9 @@ PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
 
 ### Things to know
 
-- `PmFromList[{a - b, a + b}]` gives `a ± (-b)`, not `a ∓ b`. The two mean the same thing; use `PmFlip` if you prefer ∓.
+- `PmFromList[{a - b, a + b}]` gives `a ± (-b)`. That is the same object as `a ∓ b` (both have the branches `a - b` and `a + b`), just written differently. Don't apply `PmFlip` to change the notation: it swaps the branches, giving the other object.
+- With machine numbers, the branches are computed in machine precision before anything else, so a ± part far below the precision of the base is lost: `PmExpand[1. ± 1.*^-17]` gives `1.`. Use exact numbers or arbitrary precision (`1`30`) when the ± part is tiny. When halving machine numbers would lose a branch, as with `{1.*^20, 1.}`, the branches are kept as `PmBranches`.
+- Very deeply nested lists (around 1000 levels) hit `$RecursionLimit` when recombined.
 - `PmArithmetic[..., Divide]` puts both halves over a common denominator like `c^2 - d^2`. If you later substitute values that make it zero (say `d -> c`), the result is infinite on both branches, even though one branch was finite. Substitute before dividing, or use `PmToList` on the result first.
 - Everything assumes commutative algebra. Normal-order noncommutative objects before using these functions.
 - `PmSolve` merges solutions only when `Solve` returns exactly two. Otherwise it gives a message and returns the plain `Solve` result. If the equations already contain ±, each branch is solved separately. Solutions that don't depend on the sign come out plain; the others are paired, a solution of the `+` equations with one of the `-` equations, ordered by numeric value when possible. `PmSolve[x^2 == 4 ± 1, x]` gives two ± solutions covering all four roots. Each pair is valid, but it is one pairing among several.
@@ -151,7 +153,7 @@ PMFunctions/
 ├── Tests/PropertyOracle.wl reference branch evaluator for the property tests
 ├── Scripts/RunTests.wls    test runner
 ├── Scripts/BuildPaclet.wls builds build/PMFunctions-<version>.paclet
-└── Examples/Examples.wl    a runnable tour of every function
+└── Examples/Examples.wl    a runnable tour of every public function
 ```
 
 ## License
