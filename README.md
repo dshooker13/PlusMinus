@@ -120,7 +120,7 @@ PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
 ### Things to know
 
 - `PmFromList[{a - b, a + b}]` gives `a ± (-b)`. That is the same object as `a ∓ b` (both have the branches `a - b` and `a + b`), just written differently. Don't apply `PmFlip` to change the notation: it swaps the branches, giving the other object.
-- With machine numbers, the branches are computed in machine precision before anything else, so a ± part far below the precision of the base is lost: `PmExpand[1. ± 1.*^-17]` gives `1.`. Use exact numbers or arbitrary precision (`1`30`) when the ± part is tiny. When halving machine numbers would lose a branch, as with `{1.*^20, 1.}`, the branches are kept as `PmBranches`.
+- With machine numbers, the branches are computed in machine precision before anything else, so a ± part far below the precision of the base is lost: `PmExpand[1. ± 1.*^-17]` gives `1.`. See [Getting accurate numbers](#getting-accurate-numbers). When halving machine numbers would lose a branch, as with `{1.*^20, 1.}`, the branches are kept as `PmBranches`.
 - Very deeply nested lists (around 1000 levels) hit `$RecursionLimit` when recombined.
 - `PmArithmetic[..., Divide]` puts both halves over a common denominator like `c^2 - d^2`. If you later substitute values that make it zero (say `d -> c`), the result is infinite on both branches, even though one branch was finite. Substitute before dividing, or use `PmToList` on the result first.
 - Everything assumes commutative algebra. Normal-order noncommutative objects before using these functions.
@@ -128,6 +128,41 @@ PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
 - `PmEqualQ` returns `False` when `Simplify` can't prove the two expressions equal; that doesn't mean they are different. It compares branches in order, so `a ± b` and `a ∓ b` differ unless `b` is 0. Like `Simplify`, it uses generic rules: `(x^2 - 1)/(x - 1)` counts as equal to `x + 1`. Machine numbers are compared with `Equal`, which ignores differences in the last few binary digits, so `1. ± 1.*^-15` is `PmEqualQ` to `1.` even though its branches are two different numbers. That is floating-point comparison, not a tolerance built into ±.
 - Inside held expressions (`Hold`, `HoldForm`) the signs are replaced but nothing is evaluated. Patterns are rewritten too: `PmToList[PlusMinus[x_, y_] :> x]` gives rules for `x_ + y_` and `x_ - y_`.
 - Functions called with the wrong arguments give a `::pmargs` message and return unevaluated, like built-in functions.
+
+### Getting accurate numbers
+
+Do the algebra with symbols, and substitute numbers at the end.
+
+Every function computes the two branches and then splits them into `(p + m)/2 ± (p - m)/2`. With symbols and exact numbers, that split is exact. With machine numbers, it subtracts two nearly equal rounded values, so a small ± part is lost. Keeping `base ± pm` symbolic until the end means the ± part is computed on its own and stays accurate, even when you substitute machine numbers at the end:
+
+```wolfram
+PmExpand[(a ± b)^2] /. {a -> 10^8, b -> 10^-8}     (* (10^32 + 1)/10^16 ± 2 *)
+PmExpand[(a ± b)^2] /. {a -> 1.*^8, b -> 1.*^-8}   (* 1.*^16 ± 2. *)
+PmExpand[(1.*^8 ± 1.*^-8)^2]                       (* 1.*^16, the ± part is lost *)
+```
+
+A good order is:
+
+1. Do the algebra with symbols and exact numbers.
+2. Substitute exact values: `3/10`, not `0.3`.
+3. Apply `N` last, if you need decimals.
+4. If your data really is inexact, use arbitrary precision (`` 0.3`30 ``) rather than machine numbers. Wolfram then tracks how many digits survive.
+
+**Watch out for values that make something singular.** `Simplify` uses rules that hold for almost all values of the variables, and that affects values you substitute later:
+
+- **Removable singularities.** `PmSimplify[(x^2 - 1)/(x - 1) ± 1] /. x -> 1` gives `2 ± 1`, the limiting value, because `(x^2 - 1)/(x - 1)` was simplified to `x + 1`. Substituting into the unsimplified branches, `PmToList[(x^2 - 1)/(x - 1) ± 1] /. x -> 1`, gives `Indeterminate`. Neither is wrong; they answer different questions.
+- **Common denominators.** `PmArithmetic[a ± b, c ± d, Divide]` puts both halves over `c^2 - d^2`. Substituting `d -> c` then makes both branches `Indeterminate`, even though the `+` branch, `(a + b)/(2 c)`, is finite. Calling `PmToList` first doesn't help, because the common denominator is already in the result. Simplify each branch before substituting, which cancels the common factor:
+
+  ```wolfram
+  Simplify /@ PmToList[PmArithmetic[a ± b, c ± d, Divide]] /. d -> c
+  (* {(a + b)/(2 c), ComplexInfinity} *)
+  ```
+
+  Substituting into the inputs before dividing also works.
+
+So if a value you substitute might make a denominator zero or sit on the boundary of a condition, get the branches with `PmToList`, simplify each one, and then substitute.
+
+The 5 second limit on the default simplifier doesn't affect accuracy: if `Simplify` gives up on a large expression, the result is less simplified, never wrong.
 
 ## Running the tests
 
