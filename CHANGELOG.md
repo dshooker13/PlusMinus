@@ -26,6 +26,10 @@ From an audit of the package. Results only change where they used to be wrong, e
 - A sign inside a `SparseArray` was invisible. `PlusMinus[]` was never resolved. Held expressions got `1*(Plus[b])` junk.
 - The test runner silently skipped 11 tests, never checked expected messages, and exited 0 after a syntax error, an abort or an `Exit[]` in a test file. It now uses `TestReport` and checks the number of tests run. Several tests couldn't fail; they now can.
 
+### Removed
+
+- `PmToInterval` (removed in c5d1f71, listed by mistake under 2.0.0). `a ± b` means the two algebraic objects `a + b` and `a - b`, not a range, so turning it into an `Interval` contradicted the package's model. Its tests and example are removed too.
+
 ### Changed
 
 - The default `"Simplifier"` is `Simplify` with a 5 second limit per half. Use `"Simplifier" -> Simplify` for no limit.

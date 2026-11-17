@@ -17,7 +17,7 @@ PmMap[D[#, x] &, x^2 ± x^3]
 PmSolve[x^2 + b x + c == 0, x]
 (* {{x -> -b/2 ± Sqrt[b^2 - 4 c]/2}} *)
 ```
-Remember that ± here means two discrete values, not a statistical uncertainty.
+`a ± b` stands for the two algebraic objects `a + b` and `a - b`, kept together. It is not a range, an interval or a statistical uncertainty: `(0 ± 1)^2` is `1` on both branches, not "somewhere between 0 and 1".
 
 ## How it works
 
@@ -39,7 +39,7 @@ Every function follows the same three steps:
 Some branches can't be recombined that way:
 
 - **Equations, inequalities, logical combinations, rules with the same left side, lists and associations** of the same shape are combined element by element. `PmSimplify[a ± b == c]` gives `a ± b == c`. If a relation simplifies to `True` or `False` on a branch, it is decided rather than rewritten.
-- **Infinite branches, branches with different conditions, Booleans, strings, intervals, `$Failed`, and rules with different left sides** are kept as `PmBranches[p, m]`. For example, `PmArithmetic[2, 1 ± 1, Divide]` gives `PmBranches[1, ComplexInfinity]`, because averaging an infinite branch with a finite one would lose the finite one. Branches with the same condition are combined under it.
+- **Infinite branches, branches with different conditions, Booleans, strings, `Interval` objects, `$Failed`, and rules with different left sides** are kept as `PmBranches[p, m]`. For example, `PmArithmetic[2, 1 ± 1, Divide]` gives `PmBranches[1, ComplexInfinity]`, because averaging an infinite branch with a finite one would lose the finite one. Branches with the same condition are combined under it.
 
 The functions that work branch by branch (`PmToList`, `PmMap`, `PmSimplify`, `PmFlip`, `PmEqualQ` and so on) understand `PmBranches`, so you can keep working with the result. `PmParts`, `PmBase`, `PmPm` and `PmCompare` give a `::nobase` message and `$Failed` instead, because such branches have no base and ± part.
 
@@ -123,7 +123,7 @@ PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
 - `PmArithmetic[..., Divide]` puts both halves over a common denominator like `c^2 - d^2`. If you later substitute values that make it zero (say `d -> c`), the result is infinite on both branches, even though one branch was finite. Substitute before dividing, or use `PmToList` on the result first.
 - Everything assumes commutative algebra. Normal-order noncommutative objects before using these functions.
 - `PmSolve` merges solutions only when `Solve` returns exactly two. Otherwise it gives a message and returns the plain `Solve` result. If the equations already contain ±, each branch is solved separately. Solutions that don't depend on the sign come out plain; the others are paired, a solution of the `+` equations with one of the `-` equations, ordered by numeric value when possible. `PmSolve[x^2 == 4 ± 1, x]` gives two ± solutions covering all four roots. Each pair is valid, but it is one pairing among several.
-- `PmEqualQ` returns `False` when `Simplify` can't prove the two expressions equal; that doesn't mean they are different. It compares branches in order, so `a ± b` and `a ∓ b` differ unless `b` is 0. Like `Simplify`, it uses generic rules: `(x^2 - 1)/(x - 1)` counts as equal to `x + 1`. With machine numbers it uses the usual `Equal` tolerance, so `1. ± 1.*^-15` counts as equal to `1.`.
+- `PmEqualQ` returns `False` when `Simplify` can't prove the two expressions equal; that doesn't mean they are different. It compares branches in order, so `a ± b` and `a ∓ b` differ unless `b` is 0. Like `Simplify`, it uses generic rules: `(x^2 - 1)/(x - 1)` counts as equal to `x + 1`. Machine numbers are compared with `Equal`, which ignores differences in the last few binary digits, so `1. ± 1.*^-15` is `PmEqualQ` to `1.` even though its branches are two different numbers. That is floating-point comparison, not a tolerance built into ±.
 - Inside held expressions (`Hold`, `HoldForm`) the signs are replaced but nothing is evaluated. Patterns are rewritten too: `PmToList[PlusMinus[x_, y_] :> x]` gives rules for `x_ + y_` and `x_ - y_`.
 - Functions called with the wrong arguments give a `::pmargs` message and return unevaluated, like built-in functions.
 

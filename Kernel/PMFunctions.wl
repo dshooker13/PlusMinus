@@ -18,6 +18,8 @@
 (*  the "-" branch, where every \[PlusMinus] becomes - and every \[MinusPlus] becomes +.*)
 (*All signs in one expression are correlated (they flip together), which is the usual*)
 (*convention in e.g. the quadratic formula or in perturbation theory.*)
+(*So a \[PlusMinus] b is the two algebraic objects a + b and a - b. It is never a range, an interval*)
+(*or a statistical uncertainty, and nothing in this package treats it as one.*)
 (**)
 (*Every operation works the same way: split into branches, operate on each branch,*)
 (*then recombine {p, m} into  (p+m)/2 \[PlusMinus] (p-m)/2.*)
@@ -42,7 +44,7 @@ ClearAll["PMFunctions`*", "PMFunctions`Private`*"];
 PmQ::usage = "PmQ[expr] gives True if expr contains \[PlusMinus], \[MinusPlus] or PmBranches, and False otherwise.";
 
 PmBranches::usage = "PmBranches[p, m] stands for an expression whose \"+\" branch is p and whose \"-\" branch is m.
-Functions return it instead of a \[PlusMinus] b when the branches can't be safely written as (p + m)/2 \[PlusMinus] (p - m)/2: when a branch is infinite, Indeterminate or a ConditionalExpression, or when the branches are not ordinary values (True/False, strings, intervals, or equations, rules and lists of different shapes).
+Functions return it instead of a \[PlusMinus] b when the branches can't be safely written as (p + m)/2 \[PlusMinus] (p - m)/2: when a branch is infinite, Indeterminate or a ConditionalExpression, or when the branches are not ordinary values (True/False, strings, Interval objects, or equations, rules and lists of different shapes).
 PmToList, PmFromList, PmMap, PmThread, PmSimplify, PmFlip, PmEqualQ and the other functions that work branch by branch understand PmBranches, so results can be passed on. PmParts, PmBase, PmPm and PmCompare give a message instead, because such branches have no base and \[PlusMinus] part.";
 
 PmToList::usage = "PmToList[a \[PlusMinus] b] returns the branches {a + b, a - b}.

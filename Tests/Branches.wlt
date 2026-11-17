@@ -186,3 +186,15 @@ VerificationTest[PmFromList[{x :> 1, x :> 2}], PmBranches[x :> 1, x :> 2], TestI
 (* "Simplifier" may also be given inside a list, as OptionsPattern allows. *)
 VerificationTest[PmFromList[{p, m}, {"Simplifier" -> Identity}], PlusMinus[(p + m)/2, (p - m)/2], TestID -> "option-in-a-list"]
 VerificationTest[PmThread[Join, {a}, {}], {a}, TestID -> "empty-list-is-data-not-options"]
+
+
+(* ::Section:: *)
+(*\[PlusMinus] is two algebraic objects, not a range*)
+
+
+(* A range reading would give something like Interval[{0, 1}]; the two objects are 1 and 1. *)
+VerificationTest[PmToList[PlusMinus[0, 1]^2], {1, 1}, TestID -> "two-objects-not-a-range"]
+VerificationTest[PmExpand[PlusMinus[0, 1]^2], 1, TestID -> "two-objects-square-collapses"]
+(* The order of the objects matters: a \[PlusMinus] b and a \[MinusPlus] b are different, which they wouldn't be as ranges. *)
+VerificationTest[PmEqualQ[PlusMinus[a, b], MinusPlus[a, b]], False, TestID -> "two-objects-are-ordered"]
+VerificationTest[Names["PMFunctions`*Interval*"], {}, TestID -> "no-interval-functions"]
