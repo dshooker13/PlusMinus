@@ -93,7 +93,8 @@ PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if Simplify can prove that 
 PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[PlusMinus] into \[MinusPlus] and vice versa.";
 
 PmSolve::usage = "PmSolve[eqns, vars] solves eqns with Solve and, when there are exactly two solutions, merges them into a single \[PlusMinus] solution.
-PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.";
+PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.
+If eqns already contain \[PlusMinus], each branch is solved separately and the solutions are paired up, keeping the sign of the equations: PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns {{x -> -Sqrt[4 \[PlusMinus] 1]}, {x -> Sqrt[4 \[PlusMinus] 1]}} (up to how Simplify writes it).";
 
 
 
@@ -104,6 +105,7 @@ PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/
 PmFromList::arg = "Expected a list of two branches {p, m}, but got `1`.";
 General::pmargs = "`1` is not a valid call. Expected `2`.";
 PmSolve::nopair = "Solve returned `1` solution(s), not 2, so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
+PmSolve::vars = "The two solutions give values for different variables (`1` and `2`), so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
 
 
 Begin["`Private`"]
@@ -277,24 +279,49 @@ PmEqualQ[x_, y_] := x === y || TrueQ[And @@ Simplify[MapThread[Equal, {branches[
 (*Solving*)
 
 
-(* True for expressions that print with a leading minus sign, e.g. -3, -x, -Sqrt[2]/2. *)
-negativeNumberQ[e_] := NumericQ[e] && TrueQ[e < 0]
+(* True for expressions that print with a leading minus sign, e.g. -3, -x, -Sqrt[2]/2, -b - c,
+   -I, -1 + 2 I. A number is compared by its real part, or by its imaginary part when the
+   real part is 0. (Comparing a complex number with e < 0 gives Less::nord.) *)
+negativeNumberQ[e_] := NumericQ[e] && With[{re = Re[e], im = Im[e]},
+	TrueQ[If[TrueQ[re == 0], im < 0, re < 0]]
+]
+leadingMinusQ[ConditionalExpression[e_, _]] := leadingMinusQ[e]
+leadingMinusQ[e_Plus] := AllTrue[List @@ e, leadingMinusQ]
 leadingMinusQ[e_] := MatchQ[e, _?negativeNumberQ | Times[_?negativeNumberQ, __]]
 
+ruleListsQ[sols_] := MatchQ[sols, {{(_Rule) ..} ..}]
+
 (* The order of Solve's solutions is arbitrary, so we may swap them freely. We swap so that
-   the \[PlusMinus] part of the first variable has no leading minus sign: x -> 1 \[PlusMinus] Sqrt[2]
-   rather than x -> 1 \[PlusMinus] -Sqrt[2]. The same order is used for every variable, so the
-   signs stay correlated between variables. *)
-PmSolve[eqns_, vars_, rest___] := Module[{sols, keys, pair},
-	sols = Solve[eqns, vars, rest];
-	If[!MatchQ[sols, {{__Rule}, {__Rule}}] || Sort[sols[[1, All, 1]]] =!= Sort[sols[[2, All, 1]]],
-		Message[PmSolve::nopair, If[ListQ[sols], Length[sols], 0]];
-		Return[sols]
-	];
-	keys = sols[[1, All, 1]];
-	pair = {keys /. sols[[1]], keys /. sols[[2]]};
-	If[leadingMinusQ[Last[halves[pair[[All, 1]], Simplify]]], pair = Reverse[pair]];
+   the first nonzero \[PlusMinus] part has no leading minus sign: x -> 1 \[PlusMinus] Sqrt[2] rather
+   than x -> 1 \[PlusMinus] -Sqrt[2]. The same order is used for every variable, so the signs stay
+   correlated between variables. *)
+mergePair[{sol1_, sol2_}] := Module[{keys = sol1[[All, 1]], pair, pms},
+	pair = {keys /. sol1, keys /. sol2};
+	pms = MapThread[Last[halves[{#1, #2}, Simplify]] &, pair];
+	If[leadingMinusQ[SelectFirst[pms, # =!= 0 &, 0]], pair = Reverse[pair]];
 	{MapThread[#1 -> recombine[{#2, #3}, Simplify] &, {keys, pair[[1]], pair[[2]]}]}
+]
+
+PmSolve[eqns_, vars_, rest___] /; !PmQ[eqns] := Module[{sols = Solve[eqns, vars, rest]},
+	Which[
+		(* Solve couldn't solve it and has already said why. *)
+		!ListQ[sols], sols,
+		Length[sols] =!= 2 || !ruleListsQ[sols],
+			Message[PmSolve::nopair, Length[sols]]; sols,
+		Sort[sols[[1, All, 1]]] =!= Sort[sols[[2, All, 1]]],
+			Message[PmSolve::vars, sols[[1, All, 1]], sols[[2, All, 1]]]; sols,
+		True, mergePair[SortBy[#, First] & /@ sols]
+	]
+]
+
+(* Equations that contain \[PlusMinus] have their own sign. Solving them in one go would tie that
+   sign to the sign merging Solve's pair of roots, and lose half the solutions. Instead solve
+   each branch, then combine the i-th solution of one branch with the i-th of the other:
+   each such pair is a valid solution for the correlated sign of the equations. If the
+   branches give different numbers of solutions, the result is PmBranches[sols+, sols-]. *)
+PmSolve[eqns_, vars_, rest___] /; PmQ[eqns] := Module[{sols = Solve[#, vars, rest] & /@ branches[eqns]},
+	If[!AllTrue[sols, ListQ], Return[PmBranches @@ sols]];
+	recombine[Map[SortBy[#, First] &, sols, {2}], Simplify]
 ]
 
 
