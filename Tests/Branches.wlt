@@ -132,3 +132,17 @@ VerificationTest[PmMap[1/# &, PmBranches[1, ComplexInfinity]], PlusMinus[1/2, 1/
 VerificationTest[PmEqualQ[PmBranches[1, Infinity], PmBranches[1, Infinity]], True, TestID -> "PmBranches-PmEqualQ"]
 VerificationTest[PmToList[PmFromList[{Infinity, x}]], {Infinity, x}, TestID -> "PmBranches-roundtrip-infinite"]
 VerificationTest[PmToList[PmFromList[{Indeterminate, ConditionalExpression[x, x > 0]}]], {Indeterminate, ConditionalExpression[x, x > 0]}, TestID -> "PmBranches-roundtrip-indeterminate-conditional"]
+
+
+(* ::Section:: *)
+(*Edge cases*)
+
+
+VerificationTest[PmFromList[{1.5, 1.5}], 1.5, TestID -> "inexact-equal-branches"]
+VerificationTest[PmFromList[{1.5, -1.5}], PlusMinus[1.5], TestID -> "inexact-opposite-branches"]
+VerificationTest[PmQ[SparseArray[{1 -> PlusMinus[a, b]}, 2]], True, TestID -> "SparseArray-PmQ"]
+VerificationTest[PmToList[SparseArray[{1 -> PlusMinus[a, b]}, 2]], {{a + b, 0}, {a - b, 0}}, TestID -> "SparseArray-PmToList"]
+VerificationTest[PmToList[x + PlusMinus[]], {x, x}, TestID -> "empty-PlusMinus-is-zero"]
+VerificationTest[PmToList[HoldForm[PlusMinus[a, b]]], {HoldForm[a + b], HoldForm[a - b]}, TestID -> "held-expression-clean-branches"]
+VerificationTest[PmToList[HoldForm[MinusPlus[a, b, c]]], {HoldForm[a - (b + c)], HoldForm[a + b + c]}, TestID -> "held-expression-nary"]
+VerificationTest[PmFromList[{Interval[{1, 2}], Interval[{3, 4}]}], PmBranches[Interval[{1, 2}], Interval[{3, 4}]], TestID -> "Interval-branches-kept"]

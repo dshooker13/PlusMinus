@@ -53,7 +53,7 @@ PmFromList::usage = "PmFromList[{p, m}] combines the branches p and m into (p + 
 PmFromList[{a + b, a - b}] returns a \[PlusMinus] b. Identical branches return a plain expression, and opposite branches {x, -x} return \[PlusMinus]x.
 Equations, inequalities, rules, lists and associations of the same shape are combined element by element, so PmFromList[{x == a + b, x == a - b}] returns x == a \[PlusMinus] b.
 Branches that can't be safely combined are returned as PmBranches[p, m].
-The option \"Simplifier\" (default Simplify) is applied to both halves.";
+The option \"Simplifier\" is applied to both halves. The default is Simplify with a 5 second limit per half; use \"Simplifier\" -> Simplify for no limit or Identity to skip simplifying.";
 
 PmBase::usage = "PmBase[a \[PlusMinus] b] returns a, the part of the expression that is the same on both branches.
 For a general expression it returns (p + m)/2, where {p, m} = PmToList[expr].";
@@ -119,21 +119,38 @@ Begin["`Private`"]
    PlusMinus[a, b, c] is read as a + s (b + c). Typed input a \[PlusMinus] b \[PlusMinus] c parses as the
    nested PlusMinus[PlusMinus[a, b], c], which gives the same branches.
    ReplaceRepeated resolves nested signs such as a \[PlusMinus] (b \[PlusMinus] c). *)
-branchRules[s_] := {
-	PlusMinus[x_] :> s x,
-	PlusMinus[x_, y__] :> x + s Plus[y],
-	MinusPlus[x_] :> -s x,
-	MinusPlus[x_, y__] :> x - s Plus[y],
-	PmBranches[p_, m_] :> If[s === 1, p, m]
+(* The rules for each branch are written out rather than built from s, so that inside held
+   expressions they leave a + b rather than a + 1*(Plus[b]). An empty PlusMinus[] is 0. *)
+branchRules[1] = {
+	PlusMinus[] :> 0, MinusPlus[] :> 0,
+	PlusMinus[x_] :> x,
+	PlusMinus[x_, y__] :> Plus[x, y],
+	MinusPlus[x_] :> -x,
+	MinusPlus[x_, y_] :> x - y,
+	MinusPlus[x_, y__] :> x - Plus[y],
+	PmBranches[p_, _] :> p
+};
+branchRules[-1] = {
+	PlusMinus[] :> 0, MinusPlus[] :> 0,
+	PlusMinus[x_] :> -x,
+	PlusMinus[x_, y_] :> x - y,
+	PlusMinus[x_, y__] :> x - Plus[y],
+	MinusPlus[x_] :> x,
+	MinusPlus[x_, y__] :> Plus[x, y],
+	PmBranches[_, m_] :> m
 };
 
-branch[expr_, s_] := expr //. branchRules[s]
+(* A SparseArray doesn't expose its elements to pattern matching, so a sign stored in one
+   would be invisible. Such arrays are converted to ordinary lists first. *)
+normalizeSparse[expr_] := If[FreeQ[expr, _SparseArray], expr, expr /. sa_SparseArray :> Normal[sa]]
+
+branch[expr_, s_] := normalizeSparse[expr] //. branchRules[s]
 
 (* Internal code calls these private helpers rather than the public functions, so a user
    definition for a public symbol can't change how the rest of the package behaves. *)
 branches[expr_] := {branch[expr, 1], branch[expr, -1]}
 
-PmQ[expr_] := !FreeQ[expr, _PlusMinus | _MinusPlus | _PmBranches]
+PmQ[expr_] := !FreeQ[normalizeSparse[expr], _PlusMinus | _MinusPlus | _PmBranches]
 
 PmToList[expr_] := branches[expr]
 
@@ -142,7 +159,10 @@ PmToList[expr_] := branches[expr]
 (*Recombining branches*)
 
 
-$simplifierOptions = {"Simplifier" -> Simplify};
+(* The default simplifier gives up after 5 seconds per half and returns that half as it is.
+   Plain Simplify can take minutes on small inputs: a three-term trigonometric sum took 50 s.
+   Use "Simplifier" -> Simplify for no limit, or Identity to skip simplifying. *)
+$simplifierOptions = {"Simplifier" -> (TimeConstrained[Simplify[#], 5, #] &)};
 
 (* Only "Simplifier" -> f counts as an option. A general OptionsPattern[] after args___
    would also swallow a trailing data argument that happens to be a rule, as in
@@ -155,9 +175,12 @@ simplifier[f_, {opts___}] := OptionValue[f, {opts}, "Simplifier"]
 
 halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
 
+(* zeroQ also catches inexact zeros such as 0., so PmFromList[{1.5, 1.5}] gives 1.5, not 1.5 \[PlusMinus] 0. *)
+zeroQ[e_] := e === 0 || (NumericQ[e] && TrueQ[e == 0])
+
 combine[{base_, pm_}] := Which[
-	pm === 0, base,
-	base === 0, PlusMinus[pm],
+	zeroQ[pm], base,
+	zeroQ[base], PlusMinus[pm],
 	True, PlusMinus[base, pm]
 ]
 

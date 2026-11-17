@@ -78,3 +78,20 @@ VerificationTest[
 	{PmFullSimplify::pmargs},
 	TestID -> "PmFullSimplify-rejects-extra-argument"
 ]
+
+
+(* ::Section:: *)
+(*Default simplifier*)
+
+
+(* Plain Simplify took about 50 s on this input; the default gives up after 5 s per half. *)
+VerificationTest[
+	Module[{e = Sum[Sin[k x PlusMinus[1, a]]^2/(1 + Cos[PlusMinus[b, k]]), {k, 3}], t, r},
+		{t, r} = AbsoluteTiming[PmMap[Identity, e]];
+		{t < 20, Simplify[PmToList[r] - PmToList[e]]}
+	],
+	{True, {0, 0}},
+	TestID -> "default-simplifier-time-limit"
+]
+
+VerificationTest[PmMap[#^2 &, PlusMinus[a, b], "Simplifier" -> Simplify], PlusMinus[a^2 + b^2, 2 a b], TestID -> "plain-Simplify-still-available"]
