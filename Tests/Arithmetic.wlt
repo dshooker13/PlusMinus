@@ -100,3 +100,19 @@ VerificationTest[
 	SameTest -> pmSameQ,
 	TestID -> "PmThread-unknown-function"
 ]
+
+
+(* ::Section:: *)
+(*Rule arguments are data, not options*)
+
+
+(* A trailing rule used to be swallowed as an option, so ReplaceAll got only one argument. *)
+VerificationTest[PmThread[ReplaceAll, PlusMinus[x, 3 x], x -> 2], PlusMinus[2, 6], TestID -> "PmThread-rule-argument"]
+VerificationTest[PmThread[ReplaceAll, x^2 + y, {x -> PlusMinus[1, a]}], PlusMinus[1 + a^2 + y, 2 a], TestID -> "PmThread-rule-list-argument"]
+VerificationTest[PmArithmetic[PlusMinus[a, x], x -> 2, ReplaceAll], PlusMinus[a, 2], TestID -> "PmArithmetic-rule-argument"]
+
+VerificationTest[
+	PmThread[ReplaceAll, PlusMinus[x, 3 x], x -> 2, "Simplifier" -> (# + z &)],
+	PlusMinus[2 + z, 6 + z],
+	TestID -> "PmThread-rule-argument-and-option"
+]

@@ -124,6 +124,15 @@ PmToList[expr_] := {branch[expr, 1], branch[expr, -1]}
 
 $simplifierOptions = {"Simplifier" -> Simplify};
 
+(* Only "Simplifier" -> f counts as an option. A general OptionsPattern[] after args___
+   would also swallow a trailing data argument that happens to be a rule, as in
+   PmThread[ReplaceAll, expr, x -> 2]. *)
+simplifierOptionQ[(Rule | RuleDelayed)[name_String, _]] := name === "Simplifier"
+simplifierOptionQ[(Rule | RuleDelayed)[name_Symbol, _]] := SymbolName[name] === "Simplifier"
+simplifierOptionQ[_] := False
+
+simplifier[f_, {opts___}] := OptionValue[f, {opts}, "Simplifier"]
+
 halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
 
 combine[{base_, pm_}] := Which[
@@ -134,9 +143,9 @@ combine[{base_, pm_}] := Which[
 
 Options[PmFromList] = $simplifierOptions;
 
-PmFromList[{p_, m_}, OptionsPattern[]] := combine[halves[{p, m}, OptionValue["Simplifier"]]]
+PmFromList[{p_, m_}, opts___?simplifierOptionQ] := combine[halves[{p, m}, simplifier[PmFromList, {opts}]]]
 
-PmFromList[other_, OptionsPattern[]] := (Message[PmFromList::arg, Short[other]]; $Failed)
+PmFromList[other_, ___?simplifierOptionQ] := (Message[PmFromList::arg, Short[other]]; $Failed)
 
 
 (* ::Section:: *)
@@ -144,13 +153,13 @@ PmFromList[other_, OptionsPattern[]] := (Message[PmFromList::arg, Short[other]];
 
 
 Options[PmParts] = $simplifierOptions;
-PmParts[expr_, OptionsPattern[]] := halves[PmToList[expr], OptionValue["Simplifier"]]
+PmParts[expr_, opts___?simplifierOptionQ] := halves[PmToList[expr], simplifier[PmParts, {opts}]]
 
 Options[PmBase] = $simplifierOptions;
-PmBase[expr_, opts : OptionsPattern[]] := First[PmParts[expr, opts]]
+PmBase[expr_, opts___?simplifierOptionQ] := First[PmParts[expr, opts]]
 
 Options[PmPm] = $simplifierOptions;
-PmPm[expr_, opts : OptionsPattern[]] := Last[PmParts[expr, opts]]
+PmPm[expr_, opts___?simplifierOptionQ] := Last[PmParts[expr, opts]]
 
 PmFlip[expr_] := expr /. {PlusMinus -> MinusPlus, MinusPlus -> PlusMinus}
 
@@ -160,16 +169,16 @@ PmFlip[expr_] := expr /. {PlusMinus -> MinusPlus, MinusPlus -> PlusMinus}
 
 
 Options[PmMap] = $simplifierOptions;
-PmMap[f_, expr_, opts : OptionsPattern[]] := PmFromList[f /@ PmToList[expr], opts]
+PmMap[f_, expr_, opts___?simplifierOptionQ] := PmFromList[f /@ PmToList[expr], opts]
 
 Options[PmThread] = $simplifierOptions;
-PmThread[f_, args___, opts : OptionsPattern[]] := Module[{branches},
+PmThread[f_, args___, opts___?simplifierOptionQ] := Module[{branches},
 	branches = PmToList /@ {args};
 	PmFromList[{f @@ branches[[All, 1]], f @@ branches[[All, 2]]}, opts]
 ]
 
 Options[PmArithmetic] = $simplifierOptions;
-PmArithmetic[x_, y_, op_, opts : OptionsPattern[]] := PmThread[op, x, y, opts]
+PmArithmetic[x_, y_, op_, opts___?simplifierOptionQ] := PmThread[op, x, y, opts]
 
 (* Backwards-compatible alias for the original spelling. *)
 PmArithmatic[args___] := PmArithmetic[args]
@@ -178,7 +187,7 @@ PmArithmatic[args___] := PmArithmetic[args]
 applyCommand[branches_List, {f_, args___}] := Map[f[#, args] &, branches]
 
 Options[PmCommands] = $simplifierOptions;
-PmCommands[expr_, commands___List, opts : OptionsPattern[]] :=
+PmCommands[expr_, commands___List, opts___?simplifierOptionQ] :=
 	PmFromList[Fold[applyCommand, PmToList[expr], {commands}], opts]
 
 
@@ -187,7 +196,7 @@ PmCommands[expr_, commands___List, opts : OptionsPattern[]] :=
 
 
 Options[PmExpand] = {"Simplifier" -> Expand};
-PmExpand[expr_, opts : OptionsPattern[]] := PmFromList[Expand /@ PmToList[expr], "Simplifier" -> OptionValue["Simplifier"]]
+PmExpand[expr_, opts___?simplifierOptionQ] := PmFromList[Expand /@ PmToList[expr], "Simplifier" -> simplifier[PmExpand, {opts}]]
 
 PmSimplify[expr_, rest___] := PmFromList[PmToList[expr], "Simplifier" -> (Simplify[#, rest] &)]
 
