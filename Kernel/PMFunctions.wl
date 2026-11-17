@@ -29,6 +29,12 @@
 BeginPackage["PMFunctions`"]
 
 
+(* Start from a clean slate, so that loading the package again (Get after Needs, or a newer
+   copy) replaces every earlier definition. The public symbols are protected at the end. *)
+Unprotect["PMFunctions`*", "PMFunctions`Private`*"];
+ClearAll["PMFunctions`*", "PMFunctions`Private`*"];
+
+
 (* ::Section:: *)
 (*Public symbols*)
 
@@ -70,9 +76,9 @@ PmExpand::usage = "PmExpand[expr] expands both branches of expr and returns the 
 PmExpand[(a \[PlusMinus] b)^2] returns a^2 + b^2 \[PlusMinus] 2 a b.";
 
 PmSimplify::usage = "PmSimplify[expr] simplifies an expression containing \[PlusMinus]/\[MinusPlus].
-PmSimplify[expr, assum] simplifies using assumptions, exactly like Simplify.";
+PmSimplify[expr, assum] simplifies using assumptions, and PmSimplify[expr, assum, opts] also passes Simplify options such as TimeConstraint, exactly like Simplify.";
 
-PmFullSimplify::usage = "PmFullSimplify[expr] and PmFullSimplify[expr, assum] work like PmSimplify, but use FullSimplify.";
+PmFullSimplify::usage = "PmFullSimplify[expr], PmFullSimplify[expr, assum] and PmFullSimplify[expr, assum, opts] work like PmSimplify, but use FullSimplify.";
 
 PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified.";
 
@@ -90,6 +96,7 @@ PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/
 
 
 PmFromList::arg = "Expected a list of two branches {p, m}, but got `1`.";
+General::pmargs = "`1` is not a valid call. Expected `2`.";
 PmSolve::nopair = "Solve returned `1` solution(s), not 2, so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
 
 
@@ -101,8 +108,9 @@ Begin["`Private`"]
 
 
 (* s is +1 for the "+" branch and -1 for the "-" branch.
-   a \[PlusMinus] b \[PlusMinus] c is PlusMinus[a, b, c], read as a + s (b + c).
-   ReplaceRepeated also handles nested signs such as a \[PlusMinus] (b \[PlusMinus] c). *)
+   PlusMinus[a, b, c] is read as a + s (b + c). Typed input a \[PlusMinus] b \[PlusMinus] c parses as the
+   nested PlusMinus[PlusMinus[a, b], c], which gives the same branches.
+   ReplaceRepeated resolves nested signs such as a \[PlusMinus] (b \[PlusMinus] c). *)
 branchRules[s_] := {
 	PlusMinus[x_] :> s x,
 	PlusMinus[x_, y__] :> x + s Plus[y],
@@ -112,10 +120,13 @@ branchRules[s_] := {
 
 branch[expr_, s_] := expr //. branchRules[s]
 
+(* Internal code calls these private helpers rather than the public functions, so a user
+   definition for a public symbol can't change how the rest of the package behaves. *)
+branches[expr_] := {branch[expr, 1], branch[expr, -1]}
 
 PmQ[expr_] := !FreeQ[expr, _PlusMinus | _MinusPlus]
 
-PmToList[expr_] := {branch[expr, 1], branch[expr, -1]}
+PmToList[expr_] := branches[expr]
 
 
 (* ::Section:: *)
@@ -141,11 +152,13 @@ combine[{base_, pm_}] := Which[
 	True, PlusMinus[base, pm]
 ]
 
+recombine[{p_, m_}, simp_] := combine[halves[{p, m}, simp]]
+
 Options[PmFromList] = $simplifierOptions;
 
-PmFromList[{p_, m_}, opts___?simplifierOptionQ] := combine[halves[{p, m}, simplifier[PmFromList, {opts}]]]
+PmFromList[{p_, m_}, opts___?simplifierOptionQ] := recombine[{p, m}, simplifier[PmFromList, {opts}]]
 
-PmFromList[other_, ___?simplifierOptionQ] := (Message[PmFromList::arg, Short[other]]; $Failed)
+PmFromList[other : Except[{_, _}], ___?simplifierOptionQ] := (Message[PmFromList::arg, Short[other]]; $Failed)
 
 
 (* ::Section:: *)
@@ -153,13 +166,13 @@ PmFromList[other_, ___?simplifierOptionQ] := (Message[PmFromList::arg, Short[oth
 
 
 Options[PmParts] = $simplifierOptions;
-PmParts[expr_, opts___?simplifierOptionQ] := halves[PmToList[expr], simplifier[PmParts, {opts}]]
+PmParts[expr_, opts___?simplifierOptionQ] := halves[branches[expr], simplifier[PmParts, {opts}]]
 
 Options[PmBase] = $simplifierOptions;
-PmBase[expr_, opts___?simplifierOptionQ] := First[PmParts[expr, opts]]
+PmBase[expr_, opts___?simplifierOptionQ] := First[halves[branches[expr], simplifier[PmBase, {opts}]]]
 
 Options[PmPm] = $simplifierOptions;
-PmPm[expr_, opts___?simplifierOptionQ] := Last[PmParts[expr, opts]]
+PmPm[expr_, opts___?simplifierOptionQ] := Last[halves[branches[expr], simplifier[PmPm, {opts}]]]
 
 PmFlip[expr_] := expr /. {PlusMinus -> MinusPlus, MinusPlus -> PlusMinus}
 
@@ -169,26 +182,27 @@ PmFlip[expr_] := expr /. {PlusMinus -> MinusPlus, MinusPlus -> PlusMinus}
 
 
 Options[PmMap] = $simplifierOptions;
-PmMap[f_, expr_, opts___?simplifierOptionQ] := PmFromList[f /@ PmToList[expr], opts]
+PmMap[f_, expr_, opts___?simplifierOptionQ] := recombine[f /@ branches[expr], simplifier[PmMap, {opts}]]
 
 Options[PmThread] = $simplifierOptions;
-PmThread[f_, args___, opts___?simplifierOptionQ] := Module[{branches},
-	branches = PmToList /@ {args};
-	PmFromList[{f @@ branches[[All, 1]], f @@ branches[[All, 2]]}, opts]
+PmThread[f_, args___, opts___?simplifierOptionQ] := threadBranches[f, {args}, simplifier[PmThread, {opts}]]
+
+threadBranches[f_, args_List, simp_] := Module[{b = branches /@ args},
+	recombine[{f @@ b[[All, 1]], f @@ b[[All, 2]]}, simp]
 ]
 
 Options[PmArithmetic] = $simplifierOptions;
-PmArithmetic[x_, y_, op_, opts___?simplifierOptionQ] := PmThread[op, x, y, opts]
+PmArithmetic[x_, y_, op_, opts___?simplifierOptionQ] := threadBranches[op, {x, y}, simplifier[PmArithmetic, {opts}]]
 
 (* Backwards-compatible alias for the original spelling. *)
 PmArithmatic[args___] := PmArithmetic[args]
 
 (* Each command {f, args...} is run as f[branch, args...]. *)
-applyCommand[branches_List, {f_, args___}] := Map[f[#, args] &, branches]
+applyCommand[b_List, {f_, args___}] := Map[f[#, args] &, b]
 
 Options[PmCommands] = $simplifierOptions;
 PmCommands[expr_, commands___List, opts___?simplifierOptionQ] :=
-	PmFromList[Fold[applyCommand, PmToList[expr], {commands}], opts]
+	recombine[Fold[applyCommand, branches[expr], {commands}], simplifier[PmCommands, {opts}]]
 
 
 (* ::Section:: *)
@@ -196,11 +210,17 @@ PmCommands[expr_, commands___List, opts___?simplifierOptionQ] :=
 
 
 Options[PmExpand] = {"Simplifier" -> Expand};
-PmExpand[expr_, opts___?simplifierOptionQ] := PmFromList[Expand /@ PmToList[expr], "Simplifier" -> simplifier[PmExpand, {opts}]]
+PmExpand[expr_, opts___?simplifierOptionQ] := recombine[Expand /@ branches[expr], simplifier[PmExpand, {opts}]]
 
-PmSimplify[expr_, rest___] := PmFromList[PmToList[expr], "Simplifier" -> (Simplify[#, rest] &)]
+(* An optional assumption, then options of the underlying Simplify/FullSimplify. Anything
+   else (such as "Simplifier", which these two functions don't take) is a wrong call. *)
+validOptionsQ[f_, opts_List] := FilterRules[opts, Except[Options[f]]] === {}
 
-PmFullSimplify[expr_, rest___] := PmFromList[PmToList[expr], "Simplifier" -> (FullSimplify[#, rest] &)]
+PmSimplify[expr_, assum : Repeated[Except[_?OptionQ], {0, 1}], opts : OptionsPattern[]] /; validOptionsQ[Simplify, {opts}] :=
+	recombine[branches[expr], Simplify[#, assum, opts] &]
+
+PmFullSimplify[expr_, assum : Repeated[Except[_?OptionQ], {0, 1}], opts : OptionsPattern[]] /; validOptionsQ[FullSimplify, {opts}] :=
+	recombine[branches[expr], FullSimplify[#, assum, opts] &]
 
 
 (* ::Section:: *)
@@ -208,9 +228,11 @@ PmFullSimplify[expr_, rest___] := PmFromList[PmToList[expr], "Simplifier" -> (Fu
 
 
 (* MapThread rather than Thread[l1 == l2]: identical lists would make l1 == l2 evaluate to a single True. *)
-PmCompare[x_, y_] := Simplify[MapThread[Equal, {PmParts[x], PmParts[y]}]]
+compare[x_, y_] := Simplify[MapThread[Equal, {halves[branches[x], Simplify], halves[branches[y], Simplify]}]]
 
-PmEqualQ[x_, y_] := TrueQ[And @@ PmCompare[x, y]]
+PmCompare[x_, y_] := compare[x, y]
+
+PmEqualQ[x_, y_] := TrueQ[And @@ compare[x, y]]
 
 
 (* ::Section:: *)
@@ -234,10 +256,57 @@ PmSolve[eqns_, vars_, rest___] := Module[{sols, keys, pair},
 	keys = sols[[1, All, 1]];
 	pair = {keys /. sols[[1]], keys /. sols[[2]]};
 	If[leadingMinusQ[Last[halves[pair[[All, 1]], Simplify]]], pair = Reverse[pair]];
-	{MapThread[#1 -> PmFromList[{#2, #3}] &, {keys, pair[[1]], pair[[2]]}]}
+	{MapThread[#1 -> recombine[{#2, #3}, Simplify] &, {keys, pair[[1]], pair[[2]]}]}
 ]
 
 
+(* ::Section:: *)
+(*Argument checking*)
+
+
+(* For each function: the form shown in the error message, and its ArgumentsPattern.
+   PmArithmatic is left out: its alias definition already accepts any arguments and hands
+   them to PmArithmetic, which does the checking.
+   A call that matches none of a function's definitions gives General::pmargs and returns
+   unevaluated, like a built-in function called with the wrong arguments. *)
+$signatures = {
+	PmQ -> {"PmQ[expr]", {_}},
+	PmToList -> {"PmToList[expr]", {_}},
+	PmFromList -> {"PmFromList[{p, m}, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
+	PmBase -> {"PmBase[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
+	PmPm -> {"PmPm[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
+	PmParts -> {"PmParts[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
+	PmMap -> {"PmMap[f, expr, \"Simplifier\" -> f]", {_, _, OptionsPattern[]}},
+	PmThread -> {"PmThread[f, expr1, expr2, ..., \"Simplifier\" -> f]", {_, ___, OptionsPattern[]}},
+	PmArithmetic -> {"PmArithmetic[expr1, expr2, op, \"Simplifier\" -> f]", {_, _, _, OptionsPattern[]}},
+	PmCommands -> {"PmCommands[expr, {f1, args1...}, {f2, args2...}, ..., \"Simplifier\" -> f]", {_, ___, OptionsPattern[]}},
+	PmExpand -> {"PmExpand[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
+	PmSimplify -> {"PmSimplify[expr], PmSimplify[expr, assum] or PmSimplify[expr, assum, opts] with Simplify options", {_, _., OptionsPattern[]}},
+	PmFullSimplify -> {"PmFullSimplify[expr], PmFullSimplify[expr, assum] or PmFullSimplify[expr, assum, opts] with FullSimplify options", {_, _., OptionsPattern[]}},
+	PmCompare -> {"PmCompare[expr1, expr2]", {_, _}},
+	PmEqualQ -> {"PmEqualQ[expr1, expr2]", {_, _}},
+	PmFlip -> {"PmFlip[expr]", {_}},
+	PmSolve -> {"PmSolve[eqns, vars, ...]", {_, _, ___}}
+};
+
+badCall[f_, call_, expected_] := (Message[MessageName[f, "pmargs"], call, expected]; False)
+
+Scan[
+	Function[{rule}, With[{f = First[rule], form = rule[[2, 1]], pattern = rule[[2, 2]]},
+		SyntaxInformation[f] = Join[
+			{"ArgumentsPattern" -> pattern},
+			If[MemberQ[pattern, Verbatim[OptionsPattern][]] && f =!= PmSimplify && f =!= PmFullSimplify, {"OptionNames" -> {"\"Simplifier\""}}, {}]
+		];
+		f[args___] := Null /; badCall[f, HoldForm[f[args]], form]
+	]],
+	$signatures
+];
+
+
 End[]
+
+
+SetAttributes[Evaluate[Names["PMFunctions`*"]], Protected];
+
 
 EndPackage[]
