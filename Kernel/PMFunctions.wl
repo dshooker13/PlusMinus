@@ -39,7 +39,11 @@ ClearAll["PMFunctions`*", "PMFunctions`Private`*"];
 (*Public symbols*)
 
 
-PmQ::usage = "PmQ[expr] gives True if expr contains \[PlusMinus] or \[MinusPlus], and False otherwise.";
+PmQ::usage = "PmQ[expr] gives True if expr contains \[PlusMinus], \[MinusPlus] or PmBranches, and False otherwise.";
+
+PmBranches::usage = "PmBranches[p, m] stands for an expression whose \"+\" branch is p and whose \"-\" branch is m.
+Functions return it instead of a \[PlusMinus] b when the branches can't be safely written as (p + m)/2 \[PlusMinus] (p - m)/2: when a branch is infinite, Indeterminate or a ConditionalExpression, or when the branches are not ordinary values (True/False, strings, intervals, or equations, rules and lists of different shapes).
+Every function in the package understands PmBranches, so results can be passed on.";
 
 PmToList::usage = "PmToList[a \[PlusMinus] b] returns the branches {a + b, a - b}.
 PmToList[a \[MinusPlus] b] returns {a - b, a + b}.
@@ -47,6 +51,8 @@ Every \[PlusMinus]/\[MinusPlus] in the expression is replaced consistently, so P
 
 PmFromList::usage = "PmFromList[{p, m}] combines the branches p and m into (p + m)/2 \[PlusMinus] (p - m)/2.
 PmFromList[{a + b, a - b}] returns a \[PlusMinus] b. Identical branches return a plain expression, and opposite branches {x, -x} return \[PlusMinus]x.
+Equations, inequalities, rules, lists and associations of the same shape are combined element by element, so PmFromList[{x == a + b, x == a - b}] returns x == a \[PlusMinus] b.
+Branches that can't be safely combined are returned as PmBranches[p, m].
 The option \"Simplifier\" (default Simplify) is applied to both halves.";
 
 PmBase::usage = "PmBase[a \[PlusMinus] b] returns a, the part of the expression that is the same on both branches.
@@ -82,7 +88,7 @@ PmFullSimplify::usage = "PmFullSimplify[expr], PmFullSimplify[expr, assum] and P
 
 PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified.";
 
-PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if the two expressions have provably equal branches, and False otherwise.";
+PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if Simplify can prove that the two expressions have equal branches, and False otherwise. False means \"not proven equal\", not \"proven different\". Branches are compared in order, so a \[PlusMinus] b and a \[MinusPlus] b are different unless b is 0. Simplify uses generic rules, so (x^2 - 1)/(x - 1) counts as equal to x + 1.";
 
 PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[PlusMinus] into \[MinusPlus] and vice versa.";
 
@@ -115,7 +121,8 @@ branchRules[s_] := {
 	PlusMinus[x_] :> s x,
 	PlusMinus[x_, y__] :> x + s Plus[y],
 	MinusPlus[x_] :> -s x,
-	MinusPlus[x_, y__] :> x - s Plus[y]
+	MinusPlus[x_, y__] :> x - s Plus[y],
+	PmBranches[p_, m_] :> If[s === 1, p, m]
 };
 
 branch[expr_, s_] := expr //. branchRules[s]
@@ -124,7 +131,7 @@ branch[expr_, s_] := expr //. branchRules[s]
    definition for a public symbol can't change how the rest of the package behaves. *)
 branches[expr_] := {branch[expr, 1], branch[expr, -1]}
 
-PmQ[expr_] := !FreeQ[expr, _PlusMinus | _MinusPlus]
+PmQ[expr_] := !FreeQ[expr, _PlusMinus | _MinusPlus | _PmBranches]
 
 PmToList[expr_] := branches[expr]
 
@@ -152,6 +159,28 @@ combine[{base_, pm_}] := Which[
 	True, PlusMinus[base, pm]
 ]
 
+(* Recombining is where (p + m)/2 \[PlusMinus] (p - m)/2 can go wrong, so it is done in three ways:
+   - Branches with the same structure (equations, rules, lists, ...) are combined element by
+     element: averaging two equations or two rules is meaningless.
+   - Branches that can't be halved safely are kept as PmBranches[p, m]. With an infinite
+     branch, (p + m)/2 and (p - m)/2 are both infinite and the finite branch is lost. With
+     ConditionalExpressions, Simplify merges the halves under both conditions, so a valid
+     branch becomes Undefined.
+   - Everything else is halved and simplified as before. *)
+$structuralHeads = List | Equal | Unequal | Less | LessEqual | Greater | GreaterEqual | Rule | RuleDelayed;
+
+sameStructureQ[p_, m_] := Head[p] === Head[m] && MatchQ[Head[p], $structuralHeads] && Length[p] === Length[m]
+sameStructureQ[p_Association, m_Association] := Sort[Keys[p]] === Sort[Keys[m]]
+
+unsafeQ[e_] := !FreeQ[e, DirectedInfinity | Indeterminate | Undefined | ConditionalExpression | Interval, {0, Infinity}, Heads -> True] ||
+	MatchQ[e, True | False | _String | _Association | $structuralHeads[___]]
+
+recombine[{p_Association, m_Association}, simp_] /; sameStructureQ[p, m] :=
+	Association[KeyValueMap[#1 -> recombine[{#2, m[#1]}, simp] &, p]]
+recombine[{p_, m_}, simp_] /; sameStructureQ[p, m] :=
+	Head[p] @@ MapThread[recombine[{#1, #2}, simp] &, {List @@ p, List @@ m}]
+recombine[{p_, m_}, simp_] /; unsafeQ[p] || unsafeQ[m] :=
+	If[p === m, p, PmBranches[simp[p], simp[m]]]
 recombine[{p_, m_}, simp_] := combine[halves[{p, m}, simp]]
 
 Options[PmFromList] = $simplifierOptions;
@@ -174,7 +203,14 @@ PmBase[expr_, opts___?simplifierOptionQ] := First[halves[branches[expr], simplif
 Options[PmPm] = $simplifierOptions;
 PmPm[expr_, opts___?simplifierOptionQ] := Last[halves[branches[expr], simplifier[PmPm, {opts}]]]
 
-PmFlip[expr_] := expr /. {PlusMinus -> MinusPlus, MinusPlus -> PlusMinus}
+(* Flipping maps s to -s: swap \[PlusMinus] and \[MinusPlus], and swap the arguments of PmBranches. *)
+flip[expr_] := expr /. {
+	PlusMinus[a___] :> MinusPlus @@ (flip /@ {a}),
+	MinusPlus[a___] :> PlusMinus @@ (flip /@ {a}),
+	PmBranches[p_, m_] :> PmBranches[flip[m], flip[p]]
+}
+
+PmFlip[expr_] := flip[expr]
 
 
 (* ::Section:: *)
@@ -232,7 +268,9 @@ compare[x_, y_] := Simplify[MapThread[Equal, {halves[branches[x], Simplify], hal
 
 PmCompare[x_, y_] := compare[x, y]
 
-PmEqualQ[x_, y_] := TrueQ[And @@ compare[x, y]]
+(* Branches are compared directly rather than through PmCompare's halves, so expressions
+   with an infinite branch can still be compared. *)
+PmEqualQ[x_, y_] := x === y || TrueQ[And @@ Simplify[MapThread[Equal, {branches[x], branches[y]}]]]
 
 
 (* ::Section:: *)

@@ -9,6 +9,7 @@
      PlusMinus[x, y...]  -> x + s (y + ...)
      MinusPlus[x]        -> -s x
      MinusPlus[x, y...]  -> x - s (y + ...)
+     PmBranches[p, m]    -> p when s = +1, m when s = -1
    Properties are checked numerically: symbols are replaced by random rationals, and the
    two sides are compared exactly (or to 25 digits when transcendental). *)
 
@@ -33,6 +34,7 @@ refBranch[PlusMinus[u_], s_] := s refBranch[u, s];
 refBranch[PlusMinus[u_, v__], s_] := refBranch[u, s] + s Total[refBranch[#, s] & /@ {v}];
 refBranch[MinusPlus[u_], s_] := -s refBranch[u, s];
 refBranch[MinusPlus[u_, v__], s_] := refBranch[u, s] - s Total[refBranch[#, s] & /@ {v}];
+refBranch[PmBranches[u_, v_], s_] := refBranch[If[s === 1, u, v], s];
 refBranch[e_?AtomQ, _] := e;
 refBranch[h_[args___], s_] := refBranch[h, s] @@ (refBranch[#, s] & /@ {args});
 ref[e_] := {refBranch[e, 1], refBranch[e, -1]};
