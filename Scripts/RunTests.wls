@@ -1,79 +1,80 @@
 #!/usr/bin/env wolframscript
 (* ::Package:: *)
 
-(* Runs every Tests/*.wlt file and exits with status 1 if any test fails.
+(* Runs every Tests/*.wlt file with TestReport and exits with status 1 unless every test
+   in every file ran and passed.
 
-   Wolfram Engine / Mathematica:   wolframscript -file Scripts/RunTests.wls
-   Mathics3 (free, no license):    mathics -q -f Scripts/RunTests.wls
+       wolframscript -file Scripts/RunTests.wls
 
-   The .wlt files are ordinary VerificationTest files, so you can also run them in a
-   notebook with TestReport["Tests/Branches.wlt"]. This script uses its own small runner
-   instead of TestReport so that it behaves the same on both kernels.
-
-   Tests whose TestID starts with "WolframOnly:" are skipped on Mathics3, whose
-   Simplify/FullSimplify are weaker than Mathematica's. *)
+   Safeguards, each added because an earlier runner reported success when it shouldn't have:
+   - The package is loaded through its PacletInfo.wl (PacletDirectoryLoad), so the paclet
+     metadata is exercised, not just the Kernel file.
+   - TestReport checks expected messages and fails tests that emit unexpected ones.
+   - Each file's VerificationTest expressions are counted before it runs. If TestReport runs a
+     different number (a syntax error that truncates the file, an early Abort, a test that
+     was silently skipped), the file counts as failed.
+   - An Abort or a file that can't be parsed counts as a failure instead of ending the run. *)
 
 
 $repoRoot = ParentDirectory[DirectoryName[$InputFileName]];
-$Path = Prepend[$Path, FileNameJoin[{$repoRoot, "Kernel"}]];
+PacletDirectoryLoad[$repoRoot];
 Needs["PMFunctions`"];
 
-$isMathics = StringContainsQ[$Version, "Mathics"];
+$testFiles = FileNames["*.wlt", FileNameJoin[{$repoRoot, "Tests"}]];
 $passed = 0;
-$skipped = 0;
-$failures = {};
-$currentFile = "";
+$failedFiles = {};
 
-SetAttributes[runTest, HoldAllComplete];
+(* Number of VerificationTest calls written in a file, or $Failed if it doesn't parse. *)
+expectedCount[file_] := Module[{held},
+	(* The explicit "Package" format matters: auto-detection fails on some .wlt files. *)
+	held = Quiet[Import[file, {"Package", "HeldExpressions"}]];
+	If[!ListQ[held] || MemberQ[held, $Failed], Return[$Failed]];
+	Count[held, HoldComplete[VerificationTest[___]] | HoldComplete[CompoundExpression[___, VerificationTest[___], ___]]]
+]
 
-runTest[input_, expected_, rest___] := Module[
-	{opts, expectsMessages, sameTest, id, actual, exp, hadMessages = False},
-
-	opts = Cases[{rest}, _Rule | _RuleDelayed];
-	expectsMessages = Length[{rest}] > Length[opts];
-	sameTest = Replace[SameTest, Append[opts, SameTest -> SameQ]];
-	id = Replace[TestID, Append[opts, TestID -> ToString[HoldForm[input], InputForm]]];
-
-	If[$isMathics && StringQ[id] && StringMatchQ[id, "WolframOnly:*"],
-		$skipped++;
-		Return[Null]
-	];
-
-	(* Mathics3's Check reports a message after any earlier Simplify call in the same
-	   evaluation, so on Mathics3 unexpected messages are printed but not counted. *)
-	actual = Which[
-		expectsMessages, Quiet[input],
-		$isMathics, input,
-		True, Check[input, hadMessages = True; $Failed]
-	];
-	exp = expected;
-
-	If[!hadMessages && TrueQ[sameTest[actual, exp]],
-		$passed++,
-		AppendTo[$failures, {$currentFile, id}];
-		Print["  FAIL ", id];
-		Print["    expected: ", ToString[exp, InputForm]];
-		Print["    actual:   ", ToString[actual, InputForm]];
-		If[hadMessages, Print["    (unexpected messages were generated)"]]
+failureLine[test_TestObject] := Module[{id = test["TestID"], outcome = test["Outcome"]},
+	"  FAIL " <> ToString[id] <> " (" <> ToString[outcome] <> ")\n" <>
+	"    expected: " <> ToString[test["ExpectedOutput"], InputForm] <> "\n" <>
+	"    actual:   " <> ToString[test["ActualOutput"], InputForm] <>
+	If[outcome === "MessagesFailure" || outcome === "MessageFailure",
+		"\n    expected messages: " <> ToString[test["ExpectedMessages"], InputForm] <>
+		"\n    actual messages:   " <> ToString[test["ActualMessages"], InputForm],
+		""
 	]
 ]
 
+runFile[file_] := Module[{name = FileNameTake[file], expected, report, ran, ok, failures},
+	expected = expectedCount[file];
+	report = CheckAbort[TestReport[file], $Aborted];
 
-$testFiles = FileNames["*.wlt", FileNameJoin[{$repoRoot, "Tests"}]];
+	If[Head[report] =!= TestReportObject,
+		Print[name, ": could not run (", ToString[Short[report], InputForm], ")"];
+		AppendTo[$failedFiles, name];
+		Return[]
+	];
 
-Print["PMFunctions test run on ", If[$isMathics, "Mathics3", "Wolfram Language " <> ToString[$VersionNumber]]];
+	ran = report["TestsSucceededCount"] + report["TestsFailedCount"];
+	failures = Values[Join @@ Values[report["TestsFailed"]]];
+	Scan[Print[failureLine[#]] &, failures];
+
+	ok = report["TestsFailedCount"] === 0 && IntegerQ[expected] && ran === expected;
+	Print[name, ": ", report["TestsSucceededCount"], " passed, ", report["TestsFailedCount"], " failed",
+		Which[
+			expected === $Failed, " (file did not parse)",
+			ran =!= expected, " (" <> ToString[expected] <> " written, " <> ToString[ran] <> " ran)",
+			True, ""
+		]
+	];
+	$passed += report["TestsSucceededCount"];
+	If[!ok, AppendTo[$failedFiles, name]]
+]
+
+
+Print["PMFunctions test run on Wolfram Language ", $VersionNumber];
 Print[""];
-
-Do[
-	$currentFile = FileNameTake[file];
-	Module[{before = $passed, failedBefore = Length[$failures]},
-		Block[{VerificationTest = runTest}, Get[file]];
-		Print[$currentFile, ": ", $passed - before, " passed, ", Length[$failures] - failedBefore, " failed"]
-	],
-	{file, $testFiles}
-];
-
+Scan[runFile, $testFiles];
 Print[""];
-Print["Total: ", $passed, " passed, ", Length[$failures], " failed, ", $skipped, " skipped"];
+Print["Total: ", $passed, " passed; ",
+	If[$failedFiles === {}, "all files OK", "problems in " <> StringRiffle[$failedFiles, ", "]]];
 
-Exit[If[$failures === {} && $passed > 0, 0, 1]]
+Exit[If[$failedFiles === {} && $passed > 0, 0, 1]]
