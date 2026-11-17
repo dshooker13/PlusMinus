@@ -166,3 +166,6 @@ VerificationTest[
 	2,
 	TestID -> "PmSolve-does-not-use-public-PmQ"
 ]
+
+(* A root repeated on both branches comes out once, not twice. *)
+VerificationTest[PmSolve[(x - PlusMinus[2, 1])^2 == 0, x], {{x -> PlusMinus[2, 1]}}, TestID -> "PmSolve-double-root-once"]

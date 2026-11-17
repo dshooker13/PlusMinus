@@ -145,3 +145,8 @@ VerificationTest[MaxMemoryUsed[PmQ[IdentityMatrix[3000, SparseArray]]] < 10^7, T
 VerificationTest[PmMap[Identity, PlusMinus[{{1, 2}, {3, 4}}, 1]], {{PlusMinus[1, 1], PlusMinus[2, 1]}, {PlusMinus[3, 1], PlusMinus[4, 1]}}, TestID -> "exact-array-elementwise"]
 VerificationTest[First[AbsoluteTiming[PmMap[Identity, PlusMinus[RandomInteger[9, {300, 300}], 1]]]] < 1, True, TestID -> "exact-array-fast"]
 VerificationTest[PmFromList[{{1, 2}, {1, 5}}], {1, PlusMinus[7/2, -3/2]}, TestID -> "exact-array-equal-elements"]
+VerificationTest[
+	PmCompare[PlusMinus[a, b]^2, PlusMinus[a^2 + b^2, 2 a b], "Simplifier" -> Identity],
+	{((a + b)^2 + (a - b)^2)/2 == (2 a^2 + 2 b^2)/2, ((a + b)^2 - (a - b)^2)/2 == 2 a b},
+	TestID -> "PmCompare-uses-its-Simplifier"
+]
