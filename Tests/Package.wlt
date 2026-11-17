@@ -133,3 +133,15 @@ VerificationTest[
 	{"PmArithmatic", "PmBranches"},
 	TestID -> "every-function-has-syntax-information"
 ]
+
+
+(* ::Section:: *)
+(*Arrays*)
+
+
+VerificationTest[Head[PmMap[2 # &, SparseArray[{1 -> 1}, 3]]], SparseArray, TestID -> "SparseArray-without-sign-stays-sparse"]
+VerificationTest[PmQ[IdentityMatrix[2000, SparseArray]], False, TestID -> "PmQ-large-SparseArray"]
+VerificationTest[MaxMemoryUsed[PmQ[IdentityMatrix[3000, SparseArray]]] < 10^7, True, TestID -> "PmQ-SparseArray-no-dense-copy"]
+VerificationTest[PmMap[Identity, PlusMinus[{{1, 2}, {3, 4}}, 1]], {{PlusMinus[1, 1], PlusMinus[2, 1]}, {PlusMinus[3, 1], PlusMinus[4, 1]}}, TestID -> "exact-array-elementwise"]
+VerificationTest[First[AbsoluteTiming[PmMap[Identity, PlusMinus[RandomInteger[9, {300, 300}], 1]]]] < 1, True, TestID -> "exact-array-fast"]
+VerificationTest[PmFromList[{{1, 2}, {1, 5}}], {1, PlusMinus[7/2, -3/2]}, TestID -> "exact-array-equal-elements"]

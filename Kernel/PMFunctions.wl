@@ -147,7 +147,10 @@ branchRules[-1] = {
 
 (* A SparseArray doesn't expose its elements to pattern matching, so a sign stored in one
    would be invisible. Such arrays are converted to ordinary lists first. *)
-normalizeSparse[expr_] := If[FreeQ[expr, _SparseArray], expr, expr /. sa_SparseArray :> Normal[sa]]
+(* Only arrays whose stored values contain a sign are converted: a large SparseArray without
+   signs stays sparse, and checking it costs no dense copy. *)
+signedSparseQ[sa_SparseArray] := !FreeQ[ArrayRules[sa], _PlusMinus | _MinusPlus | _PmBranches]
+normalizeSparse[expr_] := If[FreeQ[expr, _SparseArray], expr, expr /. sa_SparseArray?signedSparseQ :> Normal[sa]]
 
 branch[expr_, s_] := normalizeSparse[expr] //. branchRules[s]
 
@@ -155,7 +158,8 @@ branch[expr_, s_] := normalizeSparse[expr] //. branchRules[s]
    definition for a public symbol can't change how the rest of the package behaves. *)
 branches[expr_] := {branch[expr, 1], branch[expr, -1]}
 
-pmQ[expr_] := !FreeQ[normalizeSparse[expr], _PlusMinus | _MinusPlus | _PmBranches]
+pmQ[expr_] := !FreeQ[expr, _PlusMinus | _MinusPlus | _PmBranches] ||
+	(!FreeQ[expr, _SparseArray] && !FreeQ[Cases[expr, sa_SparseArray :> signedSparseQ[sa], {0, Infinity}], True])
 
 PmQ[expr_] := pmQ[expr]
 
@@ -192,6 +196,7 @@ halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
 (* zeroQ also catches inexact zeros such as 0. and zero quantities, so PmFromList[{1.5, 1.5}]
    gives 1.5 rather than 1.5 \[PlusMinus] 0., and equal Quantity branches don't get "\[PlusMinus] 0 m". *)
 zeroQ[e_Quantity] := zeroQ[QuantityMagnitude[e]]
+zeroQ[e_SparseArray] := zeroQ[e["Background"]] && AllTrue[e["NonzeroValues"], zeroQ]
 zeroQ[e_] := e === 0 || (NumericQ[e] && TrueQ[e == 0])
 
 (* With machine numbers, averaging two roots like {Sqrt[2.], -Sqrt[2.]} leaves rounding noise
@@ -273,6 +278,13 @@ logicalOperand[{a_, b_}, simp_] := Which[
 	sameStructureQ[a, b], recombine[{a, b}, simp],
 	True, PmBranches[simp[a], simp[b]]
 ]
+(* Arrays of exact numbers: halve whole arrays at once. Simplifying a single exact number does
+   nothing, so this gives the same result as going element by element, much faster. *)
+recombine[{p_List, m_List}, _] /; Dimensions[p] === Dimensions[m] && ArrayQ[p, _, exactNumberQ] && ArrayQ[m, _, exactNumberQ] :=
+	MapThread[combine[{#1, #2}] &, {(p + m)/2, (p - m)/2}, ArrayDepth[p]]
+
+exactNumberQ[e_] := NumberQ[e] && Precision[e] === Infinity
+
 (* The left side of a rule is a pattern to match, not a value: it is kept exactly as it is. *)
 recombine[{Rule[k_, v1_], Rule[k_, v2_]}, simp_] := Rule[k, recombine[{v1, v2}, simp]]
 recombine[{p_, m_}, simp_] /; sameStructureQ[p, m] :=
@@ -495,7 +507,8 @@ $signatures = {
 	PmPm -> {"PmPm[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
 	PmParts -> {"PmParts[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
 	PmMap -> {"PmMap[f, expr, \"Simplifier\" -> f]", {_, _, OptionsPattern[]}},
-	PmThread -> {"PmThread[f, expr1, expr2, ..., \"Simplifier\" -> f]", {_, ___, OptionsPattern[]}},
+	(* No OptionsPattern: a trailing rule passed to PmThread is usually data. *)
+	PmThread -> {"PmThread[f, expr1, expr2, ..., \"Simplifier\" -> f]", {_, ___}},
 	PmArithmetic -> {"PmArithmetic[expr1, expr2, op, \"Simplifier\" -> f]", {_, _, _, OptionsPattern[]}},
 	PmCommands -> {"PmCommands[expr, {f1, args1...}, {f2, args2...}, ..., \"Simplifier\" -> f]", {_, ___, OptionsPattern[]}},
 	PmExpand -> {"PmExpand[expr, \"Simplifier\" -> f]", {_, OptionsPattern[]}},
@@ -513,9 +526,15 @@ Scan[
 	Function[{rule}, With[{f = First[rule], form = rule[[2, 1]], pattern = rule[[2, 2]]},
 		SyntaxInformation[f] = Join[
 			{"ArgumentsPattern" -> pattern},
-			If[MemberQ[pattern, Verbatim[OptionsPattern][]] && f =!= PmSimplify && f =!= PmFullSimplify, {"OptionNames" -> {"\"Simplifier\""}}, {}]
+			Which[
+				f === PmSimplify, {"OptionNames" -> ToString /@ Keys[Options[Simplify]]},
+				f === PmFullSimplify, {"OptionNames" -> ToString /@ Keys[Options[FullSimplify]]},
+				MemberQ[pattern, Verbatim[OptionsPattern][]], {"OptionNames" -> {"\"Simplifier\""}},
+				True, {}
+			]
 		];
-		f[args___] := Null /; badCall[f, HoldForm[f[args]], form]
+		(* InputForm keeps the quotes of string option names in the message. *)
+		f[args___] := Null /; badCall[f, HoldForm[InputForm[f[args]]], form]
 	]],
 	$signatures
 ];
