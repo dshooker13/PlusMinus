@@ -16,21 +16,22 @@ VerificationTest[
 VerificationTest[PmToList = 5, 5, {Set::wrsym}, TestID -> "cannot-assign-to-public-symbol"]
 VerificationTest[PmToList[PlusMinus[a, b]], {a + b, a - b}, TestID -> "still-works-after-assignment-attempt"]
 
-(* Every public function goes through private helpers, so a user definition attached to a
-   public symbol (after Unprotect) can't change how the others behave. *)
+(* Every public function goes through private helpers, so user definitions attached to public
+   symbols (after Unprotect) can't change how the others behave. The hijacks use specific
+   patterns, which a reload would only remove by clearing; the reload at the end of the same
+   test checks that, and keeps the hijacks from leaking into later tests. *)
 VerificationTest[
-	Unprotect[PmToList]; PmToList[_] := "hijacked"; Protect[PmToList];
-	{PmMap[#^2 &, PlusMinus[a, b]], PmExpand[PlusMinus[a, b]^2]},
-	{PlusMinus[a^2 + b^2, 2 a b], PlusMinus[a^2 + b^2, 2 a b]},
-	TestID -> "internal-calls-do-not-use-public-symbols"
-]
-
-(* Reloading replaces every earlier definition, including the one added above. *)
-VerificationTest[
-	Get[FileNameJoin[{ParentDirectory[DirectoryName[$TestFileName]], "Kernel", "PMFunctions.wl"}]];
-	PmToList[PlusMinus[a, b]],
-	{a + b, a - b},
-	TestID -> "reload-clears-old-definitions"
+	Module[{kernel = FileNameJoin[{ParentDirectory[DirectoryName[$TestFileName]], "Kernel", "PMFunctions.wl"}], during, after},
+		Unprotect[PmToList, PmQ, PmFromList];
+		PmToList[PlusMinus[a, b]] := "hijacked"; PmQ[_] := False; PmFromList[{_, _}] := "hijacked";
+		Protect[PmToList, PmQ, PmFromList];
+		during = {PmMap[#^2 &, PlusMinus[a, b]], PmExpand[PlusMinus[a, b]^2], Length[PmSolve[x^2 == PlusMinus[4, 1], x]]};
+		Get[kernel];
+		after = {PmToList[PlusMinus[a, b]], PmQ[PlusMinus[a, b]], PmFromList[{a + b, a - b}]};
+		{during, after}
+	],
+	{{PlusMinus[a^2 + b^2, 2 a b], PlusMinus[a^2 + b^2, 2 a b], 2}, {{a + b, a - b}, True, PlusMinus[a, b]}},
+	TestID -> "internal-calls-and-reload"
 ]
 
 
@@ -84,14 +85,51 @@ VerificationTest[
 (*Default simplifier*)
 
 
-(* Plain Simplify took about 50 s on this input; the default gives up after 5 s per half. *)
+(* Plain Simplify took about 50 s on a three-term trig sum; the default gives up after 5 s
+   per half. Checked by value rather than by timing, which would depend on the machine. *)
 VerificationTest[
-	Module[{e = Sum[Sin[k x PlusMinus[1, a]]^2/(1 + Cos[PlusMinus[b, k]]), {k, 3}], t, r},
-		{t, r} = AbsoluteTiming[PmMap[Identity, e]];
-		{t < 20, Simplify[PmToList[r] - PmToList[e]]}
-	],
-	{True, {0, 0}},
-	TestID -> "default-simplifier-time-limit"
+	Union[Options[#, "Simplifier"] & /@ {PmFromList, PmParts, PmBase, PmPm, PmMap, PmThread, PmArithmetic, PmCommands, PmCompare, PmSolve}],
+	{{"Simplifier" -> (TimeConstrained[Simplify[#1], 5, #1] &)}},
+	TestID -> "default-simplifier-is-time-limited"
+]
+VerificationTest[Options[PmExpand, "Simplifier"], {"Simplifier" -> Expand}, TestID -> "PmExpand-default-simplifier"]
+
+(* A half that takes longer than the limit comes back unsimplified (and still correct). *)
+VerificationTest[
+	PmFromList[{(a^2 - b^2)/(a - b) + c, (a^2 - b^2)/(a - b) - c}, "Simplifier" -> (TimeConstrained[(Pause[1]; Simplify[#]), 0.1, #] &)],
+	PlusMinus[(a^2 - b^2)/(a - b), c],
+	TestID -> "timed-out-half-returned-unsimplified"
 ]
 
 VerificationTest[PmMap[#^2 &, PlusMinus[a, b], "Simplifier" -> Simplify], PlusMinus[a^2 + b^2, 2 a b], TestID -> "plain-Simplify-still-available"]
+
+
+(* ::Section:: *)
+(*Options of every function*)
+
+
+VerificationTest[PmFromList[{p, m}, Simplifier -> Identity], PlusMinus[(p + m)/2, (p - m)/2], TestID -> "Simplifier-as-a-symbol"]
+VerificationTest[PmFromList[{p, m}, "Simplifier" :> Identity], PlusMinus[(p + m)/2, (p - m)/2], TestID -> "Simplifier-as-RuleDelayed"]
+VerificationTest[PmFromList[{a, b}, {}], PlusMinus[(a + b)/2, (a - b)/2], TestID -> "empty-option-list"]
+VerificationTest[PmExpand[PlusMinus[a, b]^2, "Simplifier" -> Identity], PlusMinus[(2 a^2 + 2 b^2)/2, 2 a b], TestID -> "PmExpand-Simplifier-option"]
+VerificationTest[PmArithmetic[PlusMinus[a, b], 2, Power, "Simplifier" -> Identity], PlusMinus[((a + b)^2 + (a - b)^2)/2, ((a + b)^2 - (a - b)^2)/2], TestID -> "PmArithmetic-Simplifier-option"]
+VerificationTest[PmCompare[PlusMinus[a, b]^2, PlusMinus[a^2 + b^2, 2 a b], "Simplifier" -> Simplify], {True, True}, TestID -> "PmCompare-Simplifier-option"]
+
+
+(* ::Section:: *)
+(*Every function rejects a wrong call*)
+
+
+VerificationTest[
+	Quiet[List @@ Map[Function[c, Check[c; "no message", "message"], HoldAll],
+		Hold[PmQ[], PmToList[], PmFromList[], PmBase[], PmPm[], PmParts[], PmMap[f], PmThread[], PmArithmetic[a, b],
+			PmCommands[], PmExpand[], PmSimplify[], PmFullSimplify[], PmCompare[a], PmEqualQ[a], PmFlip[], PmSolve[a]]]],
+	ConstantArray["message", 17],
+	TestID -> "every-function-messages-on-wrong-call"
+]
+
+VerificationTest[
+	Complement[Names["PMFunctions`*"], Select[Names["PMFunctions`*"], SyntaxInformation[Symbol[#]] =!= {} &]],
+	{"PmArithmatic", "PmBranches"},
+	TestID -> "every-function-has-syntax-information"
+]

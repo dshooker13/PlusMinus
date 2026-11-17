@@ -180,6 +180,11 @@ simplifierOptionQ[(Rule | RuleDelayed)[name_Symbol, _]] := SymbolName[name] === 
 simplifierOptionQ[{__?simplifierOptionQ}] := True
 simplifierOptionQ[_] := False
 
+(* Functions with a fixed number of arguments also accept an empty option list {}, like built-in
+   functions. PmThread and PmCommands don't: there a trailing {} can be data or a command. *)
+fixedArityOptionQ[{}] := True
+fixedArityOptionQ[e_] := simplifierOptionQ[e]
+
 simplifier[f_, {opts___}] := OptionValue[f, Flatten[{opts}], "Simplifier"]
 
 halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
@@ -281,9 +286,9 @@ recombine[{p_, m_}, simp_] := With[{h = halves[{p, m}, simp]},
 
 Options[PmFromList] = $simplifierOptions;
 
-PmFromList[{p_, m_}, opts___?simplifierOptionQ] := recombine[{p, m}, simplifier[PmFromList, {opts}]]
+PmFromList[{p_, m_}, opts___?fixedArityOptionQ] := recombine[{p, m}, simplifier[PmFromList, {opts}]]
 
-PmFromList[other : Except[{_, _}], ___?simplifierOptionQ] := (Message[PmFromList::arg, Short[other]]; $Failed)
+PmFromList[other : Except[{_, _}], ___?fixedArityOptionQ] := (Message[PmFromList::arg, Short[other]]; $Failed)
 
 
 (* ::Section:: *)
@@ -303,13 +308,13 @@ parts[f_, expr_, simp_] := With[{b = branches[expr]},
 ]
 
 Options[PmParts] = $simplifierOptions;
-PmParts[expr_, opts___?simplifierOptionQ] := parts[PmParts, expr, simplifier[PmParts, {opts}]]
+PmParts[expr_, opts___?fixedArityOptionQ] := parts[PmParts, expr, simplifier[PmParts, {opts}]]
 
 Options[PmBase] = $simplifierOptions;
-PmBase[expr_, opts___?simplifierOptionQ] := Replace[parts[PmBase, expr, simplifier[PmBase, {opts}]], {b_, _} :> b]
+PmBase[expr_, opts___?fixedArityOptionQ] := Replace[parts[PmBase, expr, simplifier[PmBase, {opts}]], {b_, _} :> b]
 
 Options[PmPm] = $simplifierOptions;
-PmPm[expr_, opts___?simplifierOptionQ] := Replace[parts[PmPm, expr, simplifier[PmPm, {opts}]], {_, pm_} :> pm]
+PmPm[expr_, opts___?fixedArityOptionQ] := Replace[parts[PmPm, expr, simplifier[PmPm, {opts}]], {_, pm_} :> pm]
 
 (* Flipping maps s to -s: swap \[PlusMinus] and \[MinusPlus], and swap the arguments of PmBranches.
    The heads are swapped through temporary symbols, and every replacement is a literal, so it
@@ -329,7 +334,7 @@ PmFlip[expr_] := flip[expr]
 
 
 Options[PmMap] = $simplifierOptions;
-PmMap[f_, expr_, opts___?simplifierOptionQ] := recombine[f /@ branches[expr], simplifier[PmMap, {opts}]]
+PmMap[f_, expr_, opts___?fixedArityOptionQ] := recombine[f /@ branches[expr], simplifier[PmMap, {opts}]]
 
 Options[PmThread] = $simplifierOptions;
 PmThread[f_, args___, opts___?simplifierOptionQ] := threadBranches[f, {args}, simplifier[PmThread, {opts}]]
@@ -339,7 +344,7 @@ threadBranches[f_, args_List, simp_] := Module[{b = branches /@ args},
 ]
 
 Options[PmArithmetic] = $simplifierOptions;
-PmArithmetic[x_, y_, op_, opts___?simplifierOptionQ] := threadBranches[op, {x, y}, simplifier[PmArithmetic, {opts}]]
+PmArithmetic[x_, y_, op_, opts___?fixedArityOptionQ] := threadBranches[op, {x, y}, simplifier[PmArithmetic, {opts}]]
 
 (* Backwards-compatible alias for the original spelling. *)
 PmArithmatic[args___] := PmArithmetic[args]
@@ -357,7 +362,7 @@ PmCommands[expr_, commands___List, opts___?simplifierOptionQ] :=
 
 
 Options[PmExpand] = {"Simplifier" -> Expand};
-PmExpand[expr_, opts___?simplifierOptionQ] := recombine[Expand /@ branches[expr], simplifier[PmExpand, {opts}]]
+PmExpand[expr_, opts___?fixedArityOptionQ] := recombine[Expand /@ branches[expr], simplifier[PmExpand, {opts}]]
 
 (* An optional assumption, then options of the underlying Simplify/FullSimplify. Anything
    else (such as "Simplifier", which these two functions don't take) is a wrong call. *)
@@ -380,7 +385,7 @@ PmFullSimplify[expr_, assum : Repeated[Except[_?OptionQ], {0, 1}], opts : Option
 Options[PmCompare] = $simplifierOptions;
 
 (* MapThread rather than Thread[l1 == l2]: identical lists would make l1 == l2 evaluate to a single True. *)
-PmCompare[x_, y_, opts___?simplifierOptionQ] := With[{simp = simplifier[PmCompare, {opts}]},
+PmCompare[x_, y_, opts___?fixedArityOptionQ] := With[{simp = simplifier[PmCompare, {opts}]},
 	With[{px = parts[PmCompare, x, simp], py = parts[PmCompare, y, simp]},
 		If[px === $Failed || py === $Failed, $Failed, simp /@ MapThread[Equal, {px, py}]]
 	]

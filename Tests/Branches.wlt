@@ -230,3 +230,26 @@ VerificationTest[PmFromList[{(x^2 - 1)/(x - 1) -> a, (x^2 - 1)/(x - 1) -> b}], (
 VerificationTest[PmFromList[{p && q, r && q}], PmBranches[p, r] && q, TestID -> "logical-operands-kept-apart"]
 VerificationTest[PmToList[PmFromList[{p && q, r && q}]] /. {p -> True, r -> False, q -> True}, {True, False}, TestID -> "logical-operands-evaluate"]
 VerificationTest[PmSimplify[PlusMinus[x, 1] > 0 && y > 0], PlusMinus[x, 1] > 0 && y > 0, TestID -> "relations-in-logical-still-combined"]
+
+
+(* ::Section:: *)
+(*Input without a sign still goes through the simplifier*)
+
+
+VerificationTest[PmSimplify[(a^2 - b^2)/(a - b)], a + b, TestID -> "PmSimplify-sign-free-input"]
+VerificationTest[PmFromList[{(a + b)^2, (a + b)^2}, "Simplifier" -> Expand], a^2 + 2 a b + b^2, TestID -> "PmFromList-equal-branches-simplified"]
+VerificationTest[PmMap[#^2 &, a + b, "Simplifier" -> Expand], a^2 + 2 a b + b^2, TestID -> "PmMap-sign-free-input"]
+
+
+(* ::Section:: *)
+(*Which branches are kept apart*)
+
+
+VerificationTest[Head[PmFromList[{Inequality[a, Less, b, Less, c], Inequality[a, LessEqual, b, Less, c]}]], PmBranches, TestID -> "Inequality-different-relations"]
+VerificationTest[PmFromList[{Undefined, 1}], PmBranches[Undefined, 1], TestID -> "Undefined-branch"]
+VerificationTest[PmFromList[{"a", "b"}], PmBranches["a", "b"], TestID -> "string-branches"]
+VerificationTest[PmFromList[{Element[x, Reals], Element[x, Integers]}], PmBranches[Element[x, Reals], Element[x, Integers]], TestID -> "Element-branches"]
+VerificationTest[PmFromList[{<|"a" -> 1|>, <|"b" -> 2|>}], PmBranches[<|"a" -> 1|>, <|"b" -> 2|>], TestID -> "associations-with-different-keys"]
+VerificationTest[PmSimplify[PlusMinus[Sin[x]^2 + Cos[x]^2, y] == 1 + y], PmBranches[True, y == 0], TestID -> "relation-decided-on-one-branch"]
+VerificationTest[PmFromList[{Infinity, (a^2 - b^2)/(a - b)}], PmBranches[Infinity, a + b], TestID -> "kept-branches-still-simplified"]
+VerificationTest[PmEqualQ[PmBranches[Indeterminate, 1], PmBranches[Indeterminate, 1]], True, TestID -> "PmEqualQ-identical-singular"]
