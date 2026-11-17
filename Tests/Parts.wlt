@@ -89,3 +89,15 @@ VerificationTest[PmEqualQ[PlusMinus[x], PlusMinus[0, x]], True, TestID -> "PmEqu
 VerificationTest[PmEqualQ[PlusMinus[a, b]^2, PlusMinus[a^2 + b^2, 2 a b]], True, TestID -> "PmEqualQ-needs-expansion"]
 VerificationTest[PmEqualQ[PlusMinus[x, y] MinusPlus[x, y], x^2 - y^2], True, TestID -> "PmEqualQ-difference-of-squares"]
 VerificationTest[PmEqualQ[PlusMinus[a, b]^2, MinusPlus[a^2 + b^2, 2 a b]], False, TestID -> "PmEqualQ-flipped-sign-is-different"]
+
+
+(* ::Section:: *)
+(*Branches without a base and \[PlusMinus] part*)
+
+
+VerificationTest[PmParts[PmBranches[1, ComplexInfinity]], $Failed, {PmParts::nobase}, TestID -> "PmParts-infinite-branch"]
+VerificationTest[PmBase[x == PlusMinus[a, b]], $Failed, {PmBase::nobase}, TestID -> "PmBase-equation"]
+VerificationTest[PmPm[x -> PlusMinus[a, b]], $Failed, {PmPm::nobase}, TestID -> "PmPm-rule"]
+VerificationTest[PmCompare[PmBranches[1, Infinity], PmBranches[2, Infinity]], $Failed, {PmCompare::nobase, PmCompare::nobase}, TestID -> "PmCompare-infinite-branches"]
+VerificationTest[PmEqualQ[PmBranches[1, Infinity], PmBranches[2, Infinity]], False, TestID -> "PmEqualQ-infinite-branches-differ"]
+VerificationTest[PmParts[{PlusMinus[a, b], c}], {{a, c}, {b, 0}}, TestID -> "PmParts-list-of-values"]

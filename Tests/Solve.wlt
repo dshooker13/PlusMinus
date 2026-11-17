@@ -110,3 +110,22 @@ VerificationTest[
 
 (* Two solutions for different variables used to be reported as "2 solution(s), not 2". *)
 VerificationTest[PmSolve[x y == 0, {x, y}], {{x -> 0}, {y -> 0}}, {Solve::svars, PmSolve::vars}, TestID -> "PmSolve-different-variables-message"]
+
+
+(* ::Section:: *)
+(*Pairing solutions when the equations contain a sign*)
+
+
+(* A root that doesn't depend on the sign comes out plain. *)
+VerificationTest[PmSolve[(x - 1) (x - PlusMinus[2, 3]) == 0, x], {{x -> 1}, {x -> PlusMinus[2, 3]}}, TestID -> "PmSolve-sign-independent-root"]
+
+(* Numeric roots are paired by value, so the real root of one branch pairs with the real root of the other. *)
+VerificationTest[
+	Select[x /. PmSolve[x^3 == PlusMinus[2, 1], x], Max[Abs[Im[N[PmToList[#]]]]] < 10^-10 &],
+	{PlusMinus[(3^(1/3) + 1)/2, (3^(1/3) - 1)/2]},
+	SameTest -> (Simplify[PmToList[#1] - PmToList[#2]] === {{0}, {0}} &),
+	TestID -> "PmSolve-real-roots-paired"
+]
+
+(* Paired solutions for different variables can't be merged. *)
+VerificationTest[Head[Quiet[PmSolve[x + PlusMinus[1, 1] y == 1, {x, y}]]], PmBranches, TestID -> "PmSolve-sign-different-variables"]

@@ -13,7 +13,8 @@
    - Each file's VerificationTest expressions are counted before it runs. If TestReport runs a
      different number (a syntax error that truncates the file, an early Abort, a test that
      was silently skipped), the file counts as failed.
-   - An Abort or a file that can't be parsed counts as a failure instead of ending the run. *)
+   - An Abort, Exit[] or Quit[], or a file that can't be parsed, counts as a failure instead
+     of ending the run. *)
 
 
 $repoRoot = ParentDirectory[DirectoryName[$InputFileName]];
@@ -32,7 +33,8 @@ expectedCount[file_] := Module[{held},
 		Quiet[Import[file, {"Package", "HeldExpressions"}]]
 	];
 	If[!ListQ[held] || MemberQ[held, $Failed], Return[$Failed]];
-	Count[held, HoldComplete[VerificationTest[___]] | HoldComplete[CompoundExpression[___, VerificationTest[___], ___]]]
+	(* Every VerificationTest call, including several on one line separated by semicolons. *)
+	Count[held, HoldPattern[VerificationTest[___]], Infinity]
 ]
 
 failureLine[test_TestObject] := Module[{id = test["TestID"], outcome = test["Outcome"]},
@@ -48,7 +50,10 @@ failureLine[test_TestObject] := Module[{id = test["TestID"], outcome = test["Out
 
 runFile[file_] := Module[{name = FileNameTake[file], expected, report, ran, ok, failures},
 	expected = expectedCount[file];
-	report = CheckAbort[TestReport[file], $Aborted];
+	(* An Exit[] or Quit[] in a test file would end the run with status 0, so they are caught. *)
+	report = Block[{Exit = Throw[{"Exit called", ##}, "pmexit"] &, Quit = Throw[{"Quit called", ##}, "pmexit"] &},
+		Catch[CheckAbort[TestReport[file], $Aborted], "pmexit"]
+	];
 
 	If[Head[report] =!= TestReportObject,
 		Print[name, ": could not run (", ToString[Short[report], InputForm], ")"];

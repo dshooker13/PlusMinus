@@ -6,14 +6,14 @@ From an audit of the package. Results only change where they used to be wrong, e
 
 ### New
 
-- `PmBranches[p, m]`: returned when the branches can't be written as `a ± b` (an infinite, Indeterminate or conditional branch, Booleans, strings, intervals, or equations, rules and lists of different shapes). Every function understands it.
-- `PmSolve` solves equations that already contain ± branch by branch, so every root is kept and keeps the equation's sign.
+- `PmBranches[p, m]`: returned when the branches can't be written as `a ± b` (an infinite or Indeterminate branch, branches with different conditions, Booleans, strings, intervals, `$Failed`, rules with different left sides, or structures of different shapes). The branch-by-branch functions understand it. `PmParts`, `PmBase`, `PmPm` and `PmCompare` give `::nobase` and `$Failed` for branches without a base and ± part.
+- `PmSolve` solves equations that already contain ± branch by branch, so every root is kept. Roots that don't depend on the sign come out plain.
 - `Scripts/BuildPaclet.wls` builds a paclet archive with only the package files.
 - `Tests/Properties.wlt`: property tests against an independent reference implementation.
 
 ### Fixed
 
-- Equations, inequalities, rules and lists were averaged when recombining: `PmSimplify[a ± b == c]` and `PmSimplify[PmSolve[...]]` gave half-sums of equations and rules. They are now combined element by element.
+- Equations, inequalities, logical combinations, rules and lists were averaged when recombining: `PmSimplify[a ± b == c]` and `PmSimplify[PmSolve[...]]` gave half-sums of equations and rules. They are now combined element by element.
 - One infinite branch made both halves infinite: `PmArithmetic[2, 1 ± 1, Divide]` gave `{Indeterminate, Indeterminate}` as branches.
 - Branches with different conditions (`ConditionalExpression`) were merged under both conditions, so a valid branch became `Undefined`. This also lost real roots in `PmSolve`.
 - `PmSolve[x^2 == 4 ± 1, x]` returned 2 of the 4 roots.
@@ -24,7 +24,7 @@ From an audit of the package. Results only change where they used to be wrong, e
 - Public symbols weren't protected, so `PmToList = 5` broke every function, and reloading kept stale definitions.
 - An inexact zero half was kept: `PmFromList[{1.5, 1.5}]` gave `1.5 ± 0.`.
 - A sign inside a `SparseArray` was invisible. `PlusMinus[]` was never resolved. Held expressions got `1*(Plus[b])` junk.
-- The test runner silently skipped 11 tests, never checked expected messages, and exited 0 after a syntax error or an abort. It now uses `TestReport` and checks the number of tests run. Several tests couldn't fail; they now can.
+- The test runner silently skipped 11 tests, never checked expected messages, and exited 0 after a syntax error, an abort or an `Exit[]` in a test file. It now uses `TestReport` and checks the number of tests run. Several tests couldn't fail; they now can.
 
 ### Changed
 

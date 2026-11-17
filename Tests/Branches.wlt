@@ -146,3 +146,43 @@ VerificationTest[PmToList[x + PlusMinus[]], {x, x}, TestID -> "empty-PlusMinus-i
 VerificationTest[PmToList[HoldForm[PlusMinus[a, b]]], {HoldForm[a + b], HoldForm[a - b]}, TestID -> "held-expression-clean-branches"]
 VerificationTest[PmToList[HoldForm[MinusPlus[a, b, c]]], {HoldForm[a - (b + c)], HoldForm[a + b + c]}, TestID -> "held-expression-nary"]
 VerificationTest[PmFromList[{Interval[{1, 2}], Interval[{3, 4}]}], PmBranches[Interval[{1, 2}], Interval[{3, 4}]], TestID -> "Interval-branches-kept"]
+
+
+(* ::Section:: *)
+(*What counts as unsafe*)
+
+
+(* An Infinity deep inside a value is harmless; only an infinite value or term is unsafe. *)
+VerificationTest[PmSimplify[PlusMinus[f[Infinity], a]], PlusMinus[f[Infinity], a], TestID -> "deep-infinity-is-safe"]
+VerificationTest[Head[PmMap[Series[#, {x, Infinity, 3}] &, PlusMinus[1/x, 1/x^2]]], PlusMinus, TestID -> "series-at-infinity-is-safe"]
+VerificationTest[PmFromList[{Infinity + a, b}], PmBranches[Infinity + a, b], TestID -> "infinite-term-is-unsafe"]
+
+(* Branches with the same condition are combined under it. *)
+VerificationTest[
+	PmMap[Integrate[#, {x, 0, 1}] &, PlusMinus[x^n, 2 x^n]],
+	ConditionalExpression[PlusMinus[1/(1 + n), 2/(1 + n)], Re[n] > -1],
+	TestID -> "same-condition-combined"
+]
+VerificationTest[Head[PmMap[Integrate[#, {x, 0, 1}] &, PlusMinus[x^n, 2 x^n]]], ConditionalExpression, TestID -> "same-condition-stays-conditional"]
+
+(* Rules with different left sides are different rules. *)
+VerificationTest[PmFromList[{x -> 1, y -> 2}], PmBranches[x -> 1, y -> 2], TestID -> "rules-with-different-keys"]
+VerificationTest[PmFromList[{{a -> 1}, {b -> 1}}], {PmBranches[a -> 1, b -> 1]}, TestID -> "rule-lists-with-different-keys"]
+
+(* Logical combinations are combined element by element; other non-values are kept apart. *)
+VerificationTest[PmSimplify[PlusMinus[x, 1] > 0 && y > 0], PlusMinus[x, 1] > 0 && y > 0, TestID -> "logical-and"]
+VerificationTest[PmToList[PmMap[Identity, Inequality[1, Less, PlusMinus[x, 1], LessEqual, 2]]], {Inequality[1, Less, x + 1, LessEqual, 2], Inequality[1, Less, x - 1, LessEqual, 2]}, TestID -> "inequality-chain"]
+VerificationTest[PmFromList[{$Failed, 1}], PmBranches[$Failed, 1], TestID -> "failed-branch"]
+VerificationTest[PmFromList[{Missing["NotAvailable"], 1}], PmBranches[Missing["NotAvailable"], 1], TestID -> "missing-branch"]
+
+(* A relation that simplifies to True or False on a branch is decided, not rewritten. *)
+VerificationTest[PmSimplify[x + PlusMinus[1, 1] < x + 3], True, TestID -> "relation-true-on-both-branches"]
+VerificationTest[PmSimplify[x + PlusMinus[2, 2] < x + 3], PmBranches[False, True], TestID -> "relation-decided-differently"]
+
+(* Identical held branches come back untouched, without evaluating the held part. *)
+VerificationTest[PmFromList[{x :> RandomInteger[10], x :> RandomInteger[10]}], x :> RandomInteger[10], TestID -> "identical-held-branches"]
+VerificationTest[PmFromList[{x :> 1, x :> 2}], PmBranches[x :> 1, x :> 2], TestID -> "different-delayed-rules"]
+
+(* "Simplifier" may also be given inside a list, as OptionsPattern allows. *)
+VerificationTest[PmFromList[{p, m}, {"Simplifier" -> Identity}], PlusMinus[(p + m)/2, (p - m)/2], TestID -> "option-in-a-list"]
+VerificationTest[PmThread[Join, {a}, {}], {a}, TestID -> "empty-list-is-data-not-options"]

@@ -43,7 +43,7 @@ PmQ::usage = "PmQ[expr] gives True if expr contains \[PlusMinus], \[MinusPlus] o
 
 PmBranches::usage = "PmBranches[p, m] stands for an expression whose \"+\" branch is p and whose \"-\" branch is m.
 Functions return it instead of a \[PlusMinus] b when the branches can't be safely written as (p + m)/2 \[PlusMinus] (p - m)/2: when a branch is infinite, Indeterminate or a ConditionalExpression, or when the branches are not ordinary values (True/False, strings, intervals, or equations, rules and lists of different shapes).
-Every function in the package understands PmBranches, so results can be passed on.";
+PmToList, PmFromList, PmMap, PmThread, PmSimplify, PmFlip, PmEqualQ and the other functions that work branch by branch understand PmBranches, so results can be passed on. PmParts, PmBase, PmPm and PmCompare give a message instead, because such branches have no base and \[PlusMinus] part.";
 
 PmToList::usage = "PmToList[a \[PlusMinus] b] returns the branches {a + b, a - b}.
 PmToList[a \[MinusPlus] b] returns {a - b, a + b}.
@@ -61,7 +61,8 @@ For a general expression it returns (p + m)/2, where {p, m} = PmToList[expr].";
 PmPm::usage = "PmPm[a \[PlusMinus] b] returns b, the coefficient of \[PlusMinus]. PmPm[a \[MinusPlus] b] returns -b.
 For a general expression it returns (p - m)/2, where {p, m} = PmToList[expr].";
 
-PmParts::usage = "PmParts[a \[PlusMinus] b] returns {a, b}. PmParts[a \[MinusPlus] b] returns {a, -b}.";
+PmParts::usage = "PmParts[a \[PlusMinus] b] returns {a, b}. PmParts[a \[MinusPlus] b] returns {a, -b}.
+PmParts, PmBase and PmPm need both branches to be ordinary values (or lists of them). For an infinite or conditional branch, equations, rules or PmBranches of such, they give a message and $Failed.";
 
 PmMap::usage = "PmMap[f, expr] applies f to both branches of expr and recombines the result.
 PmMap[D[#, x] &, x^2 \[PlusMinus] x^3] returns 2 x \[PlusMinus] 3 x^2.";
@@ -86,7 +87,7 @@ PmSimplify[expr, assum] simplifies using assumptions, and PmSimplify[expr, assum
 
 PmFullSimplify::usage = "PmFullSimplify[expr], PmFullSimplify[expr, assum] and PmFullSimplify[expr, assum, opts] work like PmSimplify, but use FullSimplify.";
 
-PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified.";
+PmCompare::usage = "PmCompare[a \[PlusMinus] b, c \[PlusMinus] d] returns {a == c, b == d}, with each comparison simplified. If an expression can't be split into a base and a \[PlusMinus] part (see PmParts), it gives a message and $Failed; PmEqualQ can still compare such expressions.";
 
 PmEqualQ::usage = "PmEqualQ[expr1, expr2] gives True if Simplify can prove that the two expressions have equal branches, and False otherwise. False means \"not proven equal\", not \"proven different\". Branches are compared in order, so a \[PlusMinus] b and a \[MinusPlus] b are different unless b is 0. Simplify uses generic rules, so (x^2 - 1)/(x - 1) counts as equal to x + 1.";
 
@@ -94,7 +95,7 @@ PmFlip::usage = "PmFlip[expr] swaps the two branches of expr, turning every \[Pl
 
 PmSolve::usage = "PmSolve[eqns, vars] solves eqns with Solve and, when there are exactly two solutions, merges them into a single \[PlusMinus] solution.
 PmSolve[x^2 + b x + c == 0, x] returns {{x -> -b/2 \[PlusMinus] Sqrt[b^2 - 4 c]/2}}. Any extra arguments are passed on to Solve.
-If eqns already contain \[PlusMinus], each branch is solved separately and the solutions are paired up, keeping the sign of the equations: PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns two \[PlusMinus] solutions, one with branches -Sqrt[5] and -Sqrt[3] and one with Sqrt[5] and Sqrt[3].";
+If eqns already contain \[PlusMinus], each branch is solved separately. Solutions that don't depend on the sign are returned as they are; the others are paired, a solution of the \"+\" equations with one of the \"-\" equations, ordered by numeric value when possible. Each pair is a valid solution for the equations' sign, but the pairing is one choice among several. PmSolve[x^2 == 4 \[PlusMinus] 1, x] returns two \[PlusMinus] solutions, one with branches -Sqrt[5] and -Sqrt[3] and one with Sqrt[5] and Sqrt[3].";
 
 
 
@@ -104,6 +105,7 @@ If eqns already contain \[PlusMinus], each branch is solved separately and the s
 
 PmFromList::arg = "Expected a list of two branches {p, m}, but got `1`.";
 General::pmargs = "`1` is not a valid call. Expected `2`.";
+General::nobase = "The branches `1` can't be split into a base and a \[PlusMinus] part, because a branch is infinite, conditional or not an ordinary value. Use PmToList to get the branches.";
 PmSolve::nopair = "Solve returned `1` solution(s), not 2, so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
 PmSolve::vars = "The two solutions give values for different variables (`1` and `2`), so they cannot be merged into one \[PlusMinus] solution. Returning the result of Solve unchanged.";
 
@@ -169,9 +171,10 @@ $simplifierOptions = {"Simplifier" -> (TimeConstrained[Simplify[#], 5, #] &)};
    PmThread[ReplaceAll, expr, x -> 2]. *)
 simplifierOptionQ[(Rule | RuleDelayed)[name_String, _]] := name === "Simplifier"
 simplifierOptionQ[(Rule | RuleDelayed)[name_Symbol, _]] := SymbolName[name] === "Simplifier"
+simplifierOptionQ[{__?simplifierOptionQ}] := True
 simplifierOptionQ[_] := False
 
-simplifier[f_, {opts___}] := OptionValue[f, {opts}, "Simplifier"]
+simplifier[f_, {opts___}] := OptionValue[f, Flatten[{opts}], "Simplifier"]
 
 halves[{p_, m_}, simp_] := {simp[(p + m)/2], simp[(p - m)/2]}
 
@@ -184,28 +187,53 @@ combine[{base_, pm_}] := Which[
 	True, PlusMinus[base, pm]
 ]
 
-(* Recombining is where (p + m)/2 \[PlusMinus] (p - m)/2 can go wrong, so it is done in three ways:
-   - Branches with the same structure (equations, rules, lists, ...) are combined element by
-     element: averaging two equations or two rules is meaningless.
+(* Recombining is where (p + m)/2 \[PlusMinus] (p - m)/2 can go wrong, so it is done in these ways:
+   - Identical branches that aren't plain values are returned as they are, without
+     evaluating anything held inside them (such as the right side of :>).
+   - Branches with the same structure (lists, associations with the same keys, rules with
+     the same left side, equations, inequalities and logical combinations of them) are
+     combined element by element: averaging two equations or two rules is meaningless.
+     Relations and logical expressions are simplified as a whole first; if a branch
+     becomes True or False, the branches are kept apart.
    - Branches that can't be halved safely are kept as PmBranches[p, m]. With an infinite
      branch, (p + m)/2 and (p - m)/2 are both infinite and the finite branch is lost. With
-     ConditionalExpressions, Simplify merges the halves under both conditions, so a valid
-     branch becomes Undefined.
-   - Everything else is halved and simplified as before. *)
-$structuralHeads = List | Equal | Unequal | Less | LessEqual | Greater | GreaterEqual | Rule | RuleDelayed;
+     different conditions, Simplify merges the halves under both conditions, so a valid
+     branch becomes Undefined. (Branches with the same condition are combined under it.)
+   - Everything else is halved and simplified. *)
+$relationalHeads = Equal | Unequal | Less | LessEqual | Greater | GreaterEqual | Inequality |
+	And | Or | Not | Xor | Nand | Nor | Implies | Equivalent;
+$structuralHeads = List | Rule | $relationalHeads;
 
-sameStructureQ[p_, m_] := Head[p] === Head[m] && MatchQ[Head[p], $structuralHeads] && Length[p] === Length[m]
 sameStructureQ[p_Association, m_Association] := Sort[Keys[p]] === Sort[Keys[m]]
+(* A rule with a different left side is a different rule, not the same rule with another value. *)
+sameStructureQ[Rule[k1_, _], Rule[k2_, _]] := k1 === k2
+(* Inequality[a, Less, b, LessEqual, c]: the relation symbols must match, only the operands combine. *)
+(* Parts are taken from List @@ p: p[[2 ;; ;; 2]] would build and evaluate a new Inequality. *)
+sameStructureQ[p_Inequality, m_Inequality] := Length[p] === Length[m] && (List @@ p)[[2 ;; ;; 2]] === (List @@ m)[[2 ;; ;; 2]]
+sameStructureQ[p_, m_] := Head[p] === Head[m] && MatchQ[Head[p], $structuralHeads] && Length[p] === Length[m]
 
-unsafeQ[e_] := !FreeQ[e, DirectedInfinity | Indeterminate | Undefined | ConditionalExpression | Interval, {0, Infinity}, Heads -> True] ||
-	MatchQ[e, True | False | _String | _Association | $structuralHeads[___]]
+(* Values that can't be halved. Only the value itself and its top-level terms are checked:
+   an Infinity deep inside, as in f[Infinity] or a series at Infinity, is harmless. *)
+$nonFinite = _DirectedInfinity | Indeterminate | Undefined | _ConditionalExpression | _Interval | _Overflow | _Underflow;
+$nonValue = True | False | $Failed | _Missing | _String | _Association | _RuleDelayed |
+	_Element | _NotElement | _Exists | _ForAll | $structuralHeads[___];
 
+unsafeQ[e_] := MatchQ[e, $nonFinite | $nonValue] || (MatchQ[e, _Plus | _Times] && MemberQ[List @@ e, $nonFinite])
+
+recombine[{p_, m_}, _] /; p === m && unsafeQ[p] := p
 recombine[{p_Association, m_Association}, simp_] /; sameStructureQ[p, m] :=
 	Association[KeyValueMap[#1 -> recombine[{#2, m[#1]}, simp] &, p]]
+recombine[{p : $relationalHeads[___], m_}, simp_] /; sameStructureQ[p, m] := With[{sp = simp[p], sm = simp[m]},
+	If[MatchQ[sp, True | False] || MatchQ[sm, True | False],
+		If[sp === sm, sp, PmBranches[sp, sm]],
+		Head[p] @@ MapThread[recombine[{#1, #2}, simp] &, {List @@ p, List @@ m}]
+	]
+]
 recombine[{p_, m_}, simp_] /; sameStructureQ[p, m] :=
 	Head[p] @@ MapThread[recombine[{#1, #2}, simp] &, {List @@ p, List @@ m}]
-recombine[{p_, m_}, simp_] /; unsafeQ[p] || unsafeQ[m] :=
-	If[p === m, p, PmBranches[simp[p], simp[m]]]
+recombine[{ConditionalExpression[p_, c_], ConditionalExpression[m_, c_]}, simp_] :=
+	ConditionalExpression[recombine[{p, m}, simp], c]
+recombine[{p_, m_}, simp_] /; unsafeQ[p] || unsafeQ[m] := PmBranches[simp[p], simp[m]]
 recombine[{p_, m_}, simp_] := combine[halves[{p, m}, simp]]
 
 Options[PmFromList] = $simplifierOptions;
@@ -219,14 +247,24 @@ PmFromList[other : Except[{_, _}], ___?simplifierOptionQ] := (Message[PmFromList
 (*Taking expressions apart*)
 
 
+(* A base and a \[PlusMinus] part exist only when both branches are ordinary values, or lists of
+   them. For anything else (an infinite branch, equations, rules, PmBranches of such) the
+   halves would be meaningless, so these functions give General::nobase and $Failed. *)
+splittableQ[e_List] := AllTrue[e, splittableQ]
+splittableQ[e_] := !unsafeQ[e]
+
+parts[f_, expr_, simp_] := With[{b = branches[expr]},
+	If[AllTrue[b, splittableQ], halves[b, simp], Message[MessageName[f, "nobase"], Short[b]]; $Failed]
+]
+
 Options[PmParts] = $simplifierOptions;
-PmParts[expr_, opts___?simplifierOptionQ] := halves[branches[expr], simplifier[PmParts, {opts}]]
+PmParts[expr_, opts___?simplifierOptionQ] := parts[PmParts, expr, simplifier[PmParts, {opts}]]
 
 Options[PmBase] = $simplifierOptions;
-PmBase[expr_, opts___?simplifierOptionQ] := First[halves[branches[expr], simplifier[PmBase, {opts}]]]
+PmBase[expr_, opts___?simplifierOptionQ] := Replace[parts[PmBase, expr, simplifier[PmBase, {opts}]], {b_, _} :> b]
 
 Options[PmPm] = $simplifierOptions;
-PmPm[expr_, opts___?simplifierOptionQ] := Last[halves[branches[expr], simplifier[PmPm, {opts}]]]
+PmPm[expr_, opts___?simplifierOptionQ] := Replace[parts[PmPm, expr, simplifier[PmPm, {opts}]], {_, pm_} :> pm]
 
 (* Flipping maps s to -s: swap \[PlusMinus] and \[MinusPlus], and swap the arguments of PmBranches. *)
 flip[expr_] := expr /. {
@@ -289,12 +327,12 @@ PmFullSimplify[expr_, assum : Repeated[Except[_?OptionQ], {0, 1}], opts : Option
 
 
 (* MapThread rather than Thread[l1 == l2]: identical lists would make l1 == l2 evaluate to a single True. *)
-compare[x_, y_] := Simplify[MapThread[Equal, {halves[branches[x], Simplify], halves[branches[y], Simplify]}]]
+PmCompare[x_, y_] := With[{px = parts[PmCompare, x, Simplify], py = parts[PmCompare, y, Simplify]},
+	If[px === $Failed || py === $Failed, $Failed, Simplify[MapThread[Equal, {px, py}]]]
+]
 
-PmCompare[x_, y_] := compare[x, y]
-
-(* Branches are compared directly rather than through PmCompare's halves, so expressions
-   with an infinite branch can still be compared. *)
+(* Branches are compared directly rather than through PmCompare's parts, so expressions
+   with an infinite branch, equations or PmBranches can still be compared. *)
 PmEqualQ[x_, y_] := x === y || TrueQ[And @@ Simplify[MapThread[Equal, {branches[x], branches[y]}]]]
 
 
@@ -338,13 +376,27 @@ PmSolve[eqns_, vars_, rest___] /; !PmQ[eqns] := Module[{sols = Solve[eqns, vars,
 ]
 
 (* Equations that contain \[PlusMinus] have their own sign. Solving them in one go would tie that
-   sign to the sign merging Solve's pair of roots, and lose half the solutions. Instead solve
-   each branch, then combine the i-th solution of one branch with the i-th of the other:
-   each such pair is a valid solution for the correlated sign of the equations. If the
-   branches give different numbers of solutions, the result is PmBranches[sols+, sols-]. *)
-PmSolve[eqns_, vars_, rest___] /; PmQ[eqns] := Module[{sols = Solve[#, vars, rest] & /@ branches[eqns]},
+   sign to the sign merging Solve's pair of roots, and lose half the solutions. Instead each
+   branch is solved and the solutions are paired: a solution of the "+" equation with one
+   of the "-" equation, so every pair is a valid solution for the equations' sign.
+   - Solutions found on both branches don't depend on the sign and are returned as they are.
+   - The rest are paired in order of their numeric values (real part, then imaginary part)
+     when they are numeric, so real roots pair with real roots; otherwise in Solve's order.
+     Any such pairing is valid; it is one choice among several.
+   - If the branches have different numbers of remaining solutions, or the paired solutions
+     are for different variables, they can't be paired: the result is PmBranches[sols+, sols-]. *)
+rootOrder[sol_] := With[{v = N[sol[[All, 2]]]}, If[VectorQ[v, NumericQ], {0, Re[v], Im[v]}, {1}]]
+
+PmSolve[eqns_, vars_, rest___] /; PmQ[eqns] := Module[{sols, plus, minus, common},
+	sols = Solve[#, vars, rest] & /@ branches[eqns];
 	If[!AllTrue[sols, ListQ], Return[PmBranches @@ sols]];
-	recombine[Map[SortBy[#, First] &, sols, {2}], Simplify]
+	{plus, minus} = Map[SortBy[#, First] &, sols, {2}];
+	common = Select[plus, MemberQ[minus, #] &];
+	{plus, minus} = Select[#, !MemberQ[common, #] &] & /@ {plus, minus};
+	If[Length[plus] =!= Length[minus], Return[PmBranches @@ sols]];
+	{plus, minus} = SortBy[#, rootOrder] & /@ {plus, minus};
+	If[!And @@ MapThread[#1[[All, 1]] === #2[[All, 1]] &, {plus, minus}], Return[PmBranches @@ sols]];
+	Join[common, MapThread[recombine[{#1, #2}, Simplify] &, {plus, minus}]]
 ]
 
 
