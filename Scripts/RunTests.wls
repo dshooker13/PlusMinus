@@ -21,6 +21,16 @@ $repoRoot = ParentDirectory[DirectoryName[$InputFileName]];
 PacletDirectoryLoad[$repoRoot];
 Needs["PMFunctions`"];
 
+(* Paclet resolution picks the highest version, so an installed newer PMFunctions would win
+   over this checkout. Stop rather than test the wrong code. (The test files themselves load
+   this checkout's Kernel file directly.) *)
+$loadedFrom = FindFile["PMFunctions`"];
+If[!StringQ[$loadedFrom] || !StringStartsQ[ExpandFileName[$loadedFrom], ExpandFileName[$repoRoot], IgnoreCase -> True],
+	Print["PMFunctions resolves to ", $loadedFrom, ", not to this checkout (", $repoRoot, ").\n",
+		"Uninstall the other copy (PacletUninstall[\"PMFunctions\"]) and run again."];
+	Exit[1]
+];
+
 $testFiles = FileNames["*.wlt", FileNameJoin[{$repoRoot, "Tests"}]];
 $passed = 0;
 $failedFiles = {};
@@ -37,7 +47,8 @@ expectedCount[file_] := Module[{held},
 	Count[held, HoldPattern[VerificationTest[___]], Infinity]
 ]
 
-failureLine[test_TestObject] := Module[{id = test["TestID"], outcome = test["Outcome"]},
+(* test_ rather than test_TestObject: before 13.3 the head is TestResultObject. *)
+failureLine[test_] := Module[{id = test["TestID"], outcome = test["Outcome"]},
 	"  FAIL " <> ToString[id] <> " (" <> ToString[outcome] <> ")\n" <>
 	"    expected: " <> ToString[test["ExpectedOutput"], InputForm] <> "\n" <>
 	"    actual:   " <> ToString[test["ActualOutput"], InputForm] <>
@@ -56,7 +67,7 @@ runFile[file_] := Module[{name = FileNameTake[file], expected, report, ran, ok, 
 	];
 
 	If[Head[report] =!= TestReportObject,
-		Print[name, ": could not run (", ToString[Short[report], InputForm], ")"];
+		Print[name, ": could not run (", ToString[report, InputForm], ")"];
 		AppendTo[$failedFiles, name];
 		Return[]
 	];
@@ -78,7 +89,8 @@ runFile[file_] := Module[{name = FileNameTake[file], expected, report, ran, ok, 
 ]
 
 
-Print["PMFunctions test run on Wolfram Language ", $VersionNumber];
+Print["PMFunctions ", PacletObject[File[$repoRoot]]["Version"], " from ", $loadedFrom];
+Print["Test run on Wolfram Language ", $VersionNumber];
 Print[""];
 Scan[runFile, $testFiles];
 Print[""];

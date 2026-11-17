@@ -2,19 +2,15 @@
 
 (* Shared helpers for Tests/*.wlt. Each test file loads this first with
        Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
-   It loads PMFunctions from this checkout if no PMFunctions is loaded yet, so
-   TestReport["Tests/Branches.wlt"] works in a fresh kernel. *)
+   It always loads the package from this checkout's Kernel folder, never through paclet
+   resolution: PacletDirectoryLoad + Needs would silently pick an installed PMFunctions
+   with a higher version, and the tests would check the wrong code. *)
 
-If[!MemberQ[$Packages, "PMFunctions`"],
-	PacletDirectoryLoad[ParentDirectory[DirectoryName[$InputFileName]]]
-];
-Needs["PMFunctions`"];
+Get[FileNameJoin[{ParentDirectory[DirectoryName[$InputFileName]], "Kernel", "PMFunctions.wl"}]];
 
 BeginPackage["PMTestUtils`", {"PMFunctions`"}];
 
 pmSameQ::usage = "pmSameQ[x, y] is True if x and y are both \[PlusMinus] expressions with the same number of arguments and each argument agrees after Simplify, or if neither is a \[PlusMinus] expression and they agree after Simplify. Use it where the exact form Simplify returns doesn't matter.";
-
-branchesSameQ::usage = "branchesSameQ[x, y] is True if x and y have the same two branches after Simplify, whatever form they are written in.";
 
 Begin["`Private`"];
 
@@ -25,8 +21,6 @@ pmSameQ[x_, y_] := Which[
 		TrueQ[Simplify[x - y] == 0],
 	True, False
 ]
-
-branchesSameQ[x_, y_] := Simplify[PmToList[x] - PmToList[y]] === {0, 0}
 
 End[];
 EndPackage[];
