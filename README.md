@@ -1,7 +1,5 @@
 # PMFunctions
 
-[![Tests](https://github.com/OWNER/PMFunctions/actions/workflows/tests.yml/badge.svg)](https://github.com/OWNER/PMFunctions/actions/workflows/tests.yml)
-
 **Algebra with ± and ∓ in the Wolfram Language.**
 
 Mathematica has `PlusMinus` (±) and `MinusPlus` (∓), but they are only notation. `Expand[(a ± b)^2]` leaves the expression as it is, and you can't simplify, differentiate or solve with it. PMFunctions gives ± a concrete meaning so you can:
@@ -19,7 +17,7 @@ PmMap[D[#, x] &, x^2 ± x^3]
 PmSolve[x^2 + b x + c == 0, x]
 (* {{x -> -b/2 ± Sqrt[b^2 - 4 c]/2}} *)
 ```
-It is important to remember that these are discrete points, not a statistical ±.
+`a ± b` stands for the two algebraic objects `a + b` and `a - b`, kept together. It is not a range, an interval or a statistical uncertainty: `(0 ± 1)^2` is `1` on both branches, not "somewhere between 0 and 1".
 
 ## How it works
 
@@ -38,6 +36,13 @@ Every function follows the same three steps:
 2. Operate on each branch.
 3. Recombine as `(p + m)/2 ± (p - m)/2` (`PmFromList`).
 
+Some branches can't be recombined that way:
+
+- **Equations, inequalities, logical combinations, rules with the same left side, lists and associations** of the same shape are combined element by element. `PmSimplify[a ± b == c]` gives `a ± b == c`. If a relation simplifies to `True` or `False` on a branch, it is decided rather than rewritten.
+- **Infinite branches, branches with different conditions, Booleans, strings, `Interval` and `Around` objects, dates, `$Failed`, rules with different left sides, and machine numbers whose halves would cancel** are kept as `PmBranches[p, m]`. In general: whenever `(p + m)/2 ± (p - m)/2` would not give back exactly `p` and `m`. For example, `PmArithmetic[2, 1 ± 1, Divide]` gives `PmBranches[1, ComplexInfinity]`, because averaging an infinite branch with a finite one would lose the finite one. Branches with the same condition are combined under it.
+
+The functions that work branch by branch (`PmToList`, `PmMap`, `PmSimplify`, `PmFlip`, `PmEqualQ` and so on) understand `PmBranches`, so you can keep working with the result. `PmParts`, `PmBase`, `PmPm` and `PmCompare` give a `::nobase` message and `$Failed` instead, because such branches have no base and ± part.
+
 ## Installation
 
 Requires Mathematica or Wolfram Engine 12.1 or later.
@@ -49,12 +54,20 @@ PacletDirectoryLoad["/path/to/PMFunctions"];
 Needs["PMFunctions`"]
 ```
 
-**Install permanently** (survives restarts):
+**Install permanently** (survives restarts). First build the paclet archive from the repository root:
+
+```bash
+wolframscript -file Scripts/BuildPaclet.wls
+```
+
+This writes `build/PMFunctions-<version>.paclet`, containing only the package files. Then install it:
 
 ```wolfram
-PacletInstall[CreatePacletArchive["/path/to/PMFunctions"], ForceVersionInstall -> True];
+PacletInstall["/path/to/PMFunctions/build/PMFunctions-2.1.0.paclet", ForceVersionInstall -> True];
 Needs["PMFunctions`"]
 ```
+
+Don't call `CreatePacletArchive` on the repository folder directly: it would also pack the tests, scripts and any untracked files.
 
 **Old style:** `Get["/path/to/PMFunctions/PlusMinus.wl"]` still works, so existing notebooks keep running.
 
@@ -66,13 +79,14 @@ In the input column, `a ± b` is typed with `Esc +- Esc` (or written `PlusMinus[
 |---|---|---|---|
 | `PmToList[expr]` | Split into branches | `PmToList[a ± b]` | `{a + b, a - b}` |
 | `PmFromList[{p, m}]` | Recombine branches | `PmFromList[{a + b, a - b}]` | `a ± b` |
+| `PmBranches[p, m]` | Branches kept apart (see above) | `PmToList[PmBranches[1, Infinity]]` | `{1, Infinity}` |
 | `PmQ[expr]` | Does `expr` contain ± or ∓? | `PmQ[x + (a ± b)]` | `True` |
 | `PmBase[expr]` | Part shared by both branches | `PmBase[(a ± b)^2]` | `a^2 + b^2` |
 | `PmPm[expr]` | Coefficient of ± | `PmPm[(a ± b)^2]` | `2 a b` |
 | `PmParts[expr]` | `{PmBase, PmPm}` | `PmParts[a ∓ b]` | `{a, -b}` |
 | `PmExpand[expr]` | Expand | `PmExpand[(a ± b)^2]` | `a^2 + b^2 ± 2 a b` |
-| `PmSimplify[expr, assum]` | Simplify, with optional assumptions | `PmSimplify[(a^2 - b^2)/(a - b) ± c]` | `a + b ± c` |
-| `PmFullSimplify[expr, assum]` | FullSimplify | | |
+| `PmSimplify[expr, assum, opts]` | Simplify, with optional assumptions and Simplify options | `PmSimplify[(a^2 - b^2)/(a - b) ± c]` | `a + b ± c` |
+| `PmFullSimplify[expr, assum, opts]` | FullSimplify | `PmFullSimplify[Gamma[x + 1]/Gamma[x] ± 1]` | `x ± 1` |
 | `PmMap[f, expr]` | Apply `f` to both branches | `PmMap[D[#, x] &, x^2 ± x^3]` | `2 x ± 3 x^2` |
 | `PmArithmetic[x, y, op]` | `op[x, y]` branch by branch | `PmArithmetic[a ± b, c ± d, Times]` | `a c + b d ± (a d + b c)` |
 | `PmThread[f, x, y, ...]` | `f[x, y, ...]` branch by branch | `PmThread[Plus, a ± b, c ± d, e ± f]` | `a + c + e ± (b + d + f)` |
@@ -80,7 +94,7 @@ In the input column, `a ± b` is typed with `Esc +- Esc` (or written `PlusMinus[
 | `PmCompare[x, y]` | `{base == base, pm == pm}` | `PmCompare[a ± b, a ± c]` | `{True, b == c}` |
 | `PmEqualQ[x, y]` | Are both parts equal? | `PmEqualQ[a ± b, a ∓ (-b)]` | `True` |
 | `PmFlip[expr]` | Swap ± and ∓ | `PmFlip[a ± b]` | `a ∓ b` |
-| `PmSolve[eqns, vars]` | Solve, merging two solutions into one | `PmSolve[x^2 - 2x - 1 == 0, x]` | `{{x -> 1 ± Sqrt[2]}}` |
+| `PmSolve[eqns, vars, ...]` | Solve, merging two solutions into one | `PmSolve[x^2 - 2x - 1 == 0, x]` | `{{x -> 1 ± Sqrt[2]}}` |
 
 ### Chains of commands
 
@@ -95,7 +109,9 @@ The braces around `{Normal}` are required. For a single function, `PmMap` is sho
 
 ### The "Simplifier" option
 
-Every function that recombines branches (`PmFromList`, `PmParts`, `PmBase`, `PmPm`, `PmMap`, `PmThread`, `PmArithmetic`, `PmCommands`, `PmExpand`) accepts `"Simplifier" -> f`. `f` is applied to both halves of the result. The default is `Simplify` (`Expand` for `PmExpand`). Use `Identity` to skip simplification on large expressions, or `FullSimplify` for harder cases:
+Every function that recombines branches (`PmFromList`, `PmParts`, `PmBase`, `PmPm`, `PmMap`, `PmThread`, `PmArithmetic`, `PmCommands`, `PmExpand`), and also `PmCompare` and `PmSolve`, accepts `"Simplifier" -> f`. `f` is applied to both halves of the result. Functions with a fixed number of arguments also accept the option in a list, or an empty list `{}`.
+
+The default is `Simplify` with a 5 second limit per half: if `Simplify` takes longer, that half is returned unsimplified. (`PmExpand` uses `Expand`.) Use `"Simplifier" -> Simplify` for no time limit, `Identity` to skip simplifying large expressions, or `FullSimplify` for harder cases:
 
 ```wolfram
 PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
@@ -103,30 +119,62 @@ PmArithmetic[a ± b, c ± d, Times, "Simplifier" -> Identity]
 
 ### Things to know
 
-- `PmFromList[{a - b, a + b}]` gives `a ± (-b)`, not `a ∓ b`. The two mean the same thing; use `PmFlip` if you prefer ∓.
-- `PmArithmetic[..., Divide]` produces denominators like `c^2 - d^2`, which are invalid when `c^2 == d^2`.
+- `PmFromList[{a - b, a + b}]` gives `a ± (-b)`. That is the same object as `a ∓ b` (both have the branches `a - b` and `a + b`), just written differently. Don't apply `PmFlip` to change the notation: it swaps the branches, giving the other object.
+- With machine numbers, the branches are computed in machine precision before anything else, so a ± part far below the precision of the base is lost: `PmExpand[1. ± 1.*^-17]` gives `1.`. See [Getting accurate numbers](#getting-accurate-numbers). When halving machine numbers would lose a branch, as with `{1.*^20, 1.}`, the branches are kept as `PmBranches`.
+- Very deeply nested lists (around 1000 levels) hit `$RecursionLimit` when recombined.
+- `PmArithmetic[..., Divide]` puts both halves over a common denominator like `c^2 - d^2`. If you later substitute values that make it zero (say `d -> c`), the result is infinite on both branches, even though one branch was finite. Substitute before dividing, or use `PmToList` on the result first.
 - Everything assumes commutative algebra. Normal-order noncommutative objects before using these functions.
-- `PmSolve` merges solutions only when `Solve` returns exactly two. Otherwise it gives a message and returns the plain `Solve` result.
+- `PmSolve` merges solutions only when `Solve` returns exactly two. Otherwise it gives a message and returns the plain `Solve` result. If the equations already contain ±, each branch is solved separately. Solutions that don't depend on the sign come out plain; the others are paired, a solution of the `+` equations with one of the `-` equations, ordered by numeric value when possible. `PmSolve[x^2 == 4 ± 1, x]` gives two ± solutions covering all four roots. Each pair is valid, but it is one pairing among several.
+- `PmEqualQ` returns `False` when `Simplify` can't prove the two expressions equal; that doesn't mean they are different. It compares branches in order, so `a ± b` and `a ∓ b` differ unless `b` is 0. Like `Simplify`, it uses generic rules: `(x^2 - 1)/(x - 1)` counts as equal to `x + 1`. Machine numbers are compared with `Equal`, which ignores differences in the last few binary digits, so `1. ± 1.*^-15` is `PmEqualQ` to `1.` even though its branches are two different numbers. That is floating-point comparison, not a tolerance built into ±.
+- Inside held expressions (`Hold`, `HoldForm`) the signs are replaced but nothing is evaluated. Patterns are rewritten too: `PmToList[PlusMinus[x_, y_] :> x]` gives rules for `x_ + y_` and `x_ - y_`.
+- Functions called with the wrong arguments give a `::pmargs` message and return unevaluated, like built-in functions.
+
+### Getting accurate numbers
+
+Do the algebra with symbols, and substitute numbers at the end.
+
+Every function computes the two branches and then splits them into `(p + m)/2 ± (p - m)/2`. With symbols and exact numbers, that split is exact. With machine numbers, it subtracts two nearly equal rounded values, so a small ± part is lost. Keeping `base ± pm` symbolic until the end means the ± part is computed on its own and stays accurate, even when you substitute machine numbers at the end:
+
+```wolfram
+PmExpand[(a ± b)^2] /. {a -> 10^8, b -> 10^-8}     (* (10^32 + 1)/10^16 ± 2 *)
+PmExpand[(a ± b)^2] /. {a -> 1.*^8, b -> 1.*^-8}   (* 1.*^16 ± 2. *)
+PmExpand[(1.*^8 ± 1.*^-8)^2]                       (* 1.*^16, the ± part is lost *)
+```
+
+A good order is:
+
+1. Do the algebra with symbols and exact numbers.
+2. Substitute exact values: `3/10`, not `0.3`.
+3. Apply `N` last, if you need decimals.
+4. If your data really is inexact, use arbitrary precision (`` 0.3`30 ``) rather than machine numbers. Wolfram then tracks how many digits survive.
+
+**Watch out for values that make something singular.** `Simplify` uses rules that hold for almost all values of the variables, and that affects values you substitute later:
+
+- **Removable singularities.** `PmSimplify[(x^2 - 1)/(x - 1) ± 1] /. x -> 1` gives `2 ± 1`, the limiting value, because `(x^2 - 1)/(x - 1)` was simplified to `x + 1`. Substituting into the unsimplified branches, `PmToList[(x^2 - 1)/(x - 1) ± 1] /. x -> 1`, gives `Indeterminate`. Neither is wrong; they answer different questions.
+- **Common denominators.** `PmArithmetic[a ± b, c ± d, Divide]` puts both halves over `c^2 - d^2`. Substituting `d -> c` then makes both branches `Indeterminate`, even though the `+` branch, `(a + b)/(2 c)`, is finite. Calling `PmToList` first doesn't help, because the common denominator is already in the result. Simplify each branch before substituting, which cancels the common factor:
+
+  ```wolfram
+  Simplify /@ PmToList[PmArithmetic[a ± b, c ± d, Divide]] /. d -> c
+  (* {(a + b)/(2 c), ComplexInfinity} *)
+  ```
+
+  Substituting into the inputs before dividing also works.
+
+So if a value you substitute might make a denominator zero or sit on the boundary of a condition, get the branches with `PmToList`, simplify each one, and then substitute.
+
+The 5 second limit on the default simplifier doesn't affect accuracy: if `Simplify` gives up on a large expression, the result is less simplified, never wrong.
 
 ## Running the tests
 
 The tests are ordinary `VerificationTest` files in `Tests/`. Run them all from the repository root:
 
 ```bash
-wolframscript -file Scripts/RunTests.wls   # Mathematica / Wolfram Engine
-mathics -q -f Scripts/RunTests.wls          # Mathics3 (pip install mathics3), no license needed
+wolframscript -file Scripts/RunTests.wls
 ```
 
-or run a single file from a notebook with `TestReport["Tests/Branches.wlt"]`.
+The script runs each file with `TestReport` and exits with status 1 if any test fails, if a file doesn't parse, or if a file runs a different number of tests than it contains. You can also run a single file from a notebook with `TestReport["/path/to/PMFunctions/Tests/Branches.wlt"]`. Each file loads the package from its own checkout.
 
-The script exits with status 1 if any test fails. Tests whose `TestID` starts with `WolframOnly:` are skipped on Mathics3, whose `Simplify` cannot handle some assumptions.
-
-### Continuous integration
-
-`.github/workflows/tests.yml` runs on every push and pull request:
-
-- **Mathics3**: always runs, needs no setup.
-- **Wolfram Engine** (optional): runs against the real kernel once you add an on-demand license entitlement. In Mathematica, run `CreateLicenseEntitlement[<|"LicenseExpiration" -> Quantity[1, "Hours"], "EntitlementExpiration" -> Quantity[1, "Years"]|>]["EntitlementID"]` and save the ID as the repository secret `WOLFRAMSCRIPT_ENTITLEMENTID` (Settings → Secrets and variables → Actions). On-demand kernels are billed to your Wolfram **Service Credits**; the free Wolfram Engine for Developers license can't be used here. Without the secret this job is skipped instead of failing.
+`Tests/Properties.wlt` checks the main functions on random expressions, comparing them with an independent reference implementation of the branch rules in `Tests/PropertyOracle.wl`.
 
 ## Repository layout
 
@@ -135,10 +183,12 @@ PMFunctions/
 ├── PacletInfo.wl           paclet metadata
 ├── Kernel/PMFunctions.wl   the package
 ├── PlusMinus.wl            compatibility loader for the old file name
-├── Tests/*.wlt             unit tests (VerificationTest)
-├── Scripts/RunTests.wls    test runner for Wolfram Engine and Mathics3
-├── Examples/Examples.wl    a runnable tour of every function
-└── .github/workflows/      CI
+├── Tests/*.wlt             unit and property tests (VerificationTest)
+├── Tests/TestUtils.wl      shared test helpers
+├── Tests/PropertyOracle.wl reference branch evaluator for the property tests
+├── Scripts/RunTests.wls    test runner
+├── Scripts/BuildPaclet.wls builds build/PMFunctions-<version>.paclet
+└── Examples/Examples.wl    a runnable tour of every public function
 ```
 
 ## License

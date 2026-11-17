@@ -1,17 +1,10 @@
 (* Tests for PmArithmetic, PmArithmatic (legacy name) and PmThread. *)
 
-Needs["PMFunctions`"]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 (* Two \[PlusMinus] expressions are "the same" if both are PlusMinus (or both are not)
    and their arguments agree after Simplify. This keeps tests independent of the exact
    form Simplify happens to return. *)
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
 
 
 (* ::Section:: *)
@@ -96,8 +89,8 @@ VerificationTest[
 ]
 
 VerificationTest[
-	PmThread[Power, PlusMinus[a, b], 2, "Simplifier" -> Expand],
-	PlusMinus[a^2 + b^2, 2 a b],
+	PmThread[Power, PlusMinus[a, b], 2, "Simplifier" -> Identity],
+	PlusMinus[((a + b)^2 + (a - b)^2)/2, ((a + b)^2 - (a - b)^2)/2],
 	TestID -> "PmThread-power-with-option"
 ]
 
@@ -106,4 +99,20 @@ VerificationTest[
 	PlusMinus[(f[a + b] + f[a - b])/2, (f[a + b] - f[a - b])/2],
 	SameTest -> pmSameQ,
 	TestID -> "PmThread-unknown-function"
+]
+
+
+(* ::Section:: *)
+(*Rule arguments are data, not options*)
+
+
+(* A trailing rule used to be swallowed as an option, so ReplaceAll got only one argument. *)
+VerificationTest[PmThread[ReplaceAll, PlusMinus[x, 3 x], x -> 2], PlusMinus[2, 6], TestID -> "PmThread-rule-argument"]
+VerificationTest[PmThread[ReplaceAll, x^2 + y, {x -> PlusMinus[1, a]}], PlusMinus[1 + a^2 + y, 2 a], TestID -> "PmThread-rule-list-argument"]
+VerificationTest[PmArithmetic[PlusMinus[a, x], x -> 2, ReplaceAll], PlusMinus[a, 2], TestID -> "PmArithmetic-rule-argument"]
+
+VerificationTest[
+	PmThread[ReplaceAll, PlusMinus[x, 3 x], x -> 2, "Simplifier" -> (# + z &)],
+	PlusMinus[2 + z, 6 + z],
+	TestID -> "PmThread-rule-argument-and-option"
 ]

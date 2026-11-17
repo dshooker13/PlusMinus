@@ -1,15 +1,8 @@
 (* Backwards compatibility: the examples documented in the original 2024 PlusMinus.wl
    package must keep giving the same answers. *)
 
-Needs["PMFunctions`"]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
 
 
 VerificationTest[PmFromList[{a + b, a - b}], PlusMinus[a, b], TestID -> "legacy-PmFromList"]
@@ -41,3 +34,12 @@ VerificationTest[PmExpand[PlusMinus[a, b]^2], PlusMinus[a^2 + b^2, 2 a b], SameT
 
 (* The original PmExpand failed on expressions without \[PlusMinus]; now it just expands. *)
 VerificationTest[PmExpand[(a + b)^2], a^2 + 2 a b + b^2, TestID -> "legacy-PmExpand-no-pm-fixed"]
+
+
+(* The old entry point PlusMinus.wl must still load the package, even when it is loaded already. *)
+VerificationTest[
+	Get[FileNameJoin[{ParentDirectory[DirectoryName[$TestFileName]], "PlusMinus.wl"}]];
+	PmToList[PlusMinus[a, b]],
+	{a + b, a - b},
+	TestID -> "legacy-PlusMinus.wl-loader"
+]

@@ -1,14 +1,6 @@
-(* Tests for PmSolve and PmToInterval. *)
+(* Tests for PmSolve. *)
 
-Needs["PMFunctions`"]
-
-pmSameQ[x_, y_] := Which[
-	Head[x] === PlusMinus && Head[y] === PlusMinus && Length[x] === Length[y],
-		And @@ MapThread[TrueQ[Simplify[#1 - #2] == 0] &, {List @@ x, List @@ y}],
-	Head[x] =!= PlusMinus && Head[y] =!= PlusMinus,
-		TrueQ[Simplify[x - y] == 0],
-	True, False
-]
+Get[FileNameJoin[{DirectoryName[$TestFileName], "TestUtils.wl"}]]
 
 
 (* ::Section:: *)
@@ -60,19 +52,120 @@ VerificationTest[
 	TestID -> "PmSolve-one-root-returned-unchanged"
 ]
 
+VerificationTest[
+	PmSolve[x^2 + 1 == 0, x, Reals],
+	{},
+	{PmSolve::nopair},
+	TestID -> "PmSolve-passes-domain-to-Solve"
+]
+
 
 (* ::Section:: *)
-(*PmToInterval*)
+(*Equations that already contain a sign*)
 
 
-VerificationTest[First[PmToInterval[PlusMinus[3, 1/2]]], {5/2, 7/2}, TestID -> "PmToInterval-basic"]
-VerificationTest[First[PmToInterval[MinusPlus[3, 1/2]]], {5/2, 7/2}, TestID -> "PmToInterval-minusplus"]
-VerificationTest[First[PmToInterval[PlusMinus[0, -2]]], {-2, 2}, TestID -> "PmToInterval-negative-pm"]
-VerificationTest[First[PmToInterval[PlusMinus[1, 2]^2]], {1, 9}, TestID -> "PmToInterval-expression"]
+(* The sign in the equation used to be tied to the sign merging Solve's roots, which kept
+   2 of the 4 roots of x^2 == 4 \[PlusMinus] 1. Each solution now keeps the equation's sign. *)
+VerificationTest[
+	Sort[Simplify[PmToList[x /. PmSolve[x^2 == PlusMinus[4, 1], x]]]],
+	Sort[{{-Sqrt[5], Sqrt[5]}, {-Sqrt[3], Sqrt[3]}}],
+	TestID -> "PmSolve-sign-in-equation-keeps-all-roots"
+]
+
+VerificationTest[PmSolve[x + 1 == PlusMinus[2, 1], x], {{x -> PlusMinus[1, 1]}}, TestID -> "PmSolve-sign-in-linear-equation"]
+
+(* Different numbers of solutions on the two branches can't be paired up. *)
+VerificationTest[
+	PmSolve[x^2 == PlusMinus[0, 1], x, Reals],
+	PmBranches[{{x -> -1}, {x -> 1}}, {}],
+	TestID -> "PmSolve-sign-in-equation-unequal-counts"
+]
+
+
+(* ::Section:: *)
+(*Choosing the sign and reporting problems*)
+
+
+(* Complex roots used to give Less::nord from the sign check. *)
+VerificationTest[PmSolve[x^2 + 1 == 0, x], {{x -> PlusMinus[I]}}, TestID -> "PmSolve-complex-roots-no-message"]
+VerificationTest[PmSolve[x^2 + 2 x + 5 == 0, x], {{x -> PlusMinus[-1, 2 I]}}, TestID -> "PmSolve-complex-roots-with-base"]
+
+(* When Solve can't solve the equation it says why; PmSolve adds no message of its own. *)
+VerificationTest[PmSolve[Sin[x] + x^x == Cos[x^2 + x], x], Solve[Sin[x] + x^x == Cos[x^2 + x], x], {Solve::nsmet}, TestID -> "PmSolve-unsolvable-no-extra-message"]
 
 VerificationTest[
-	PmToInterval[PlusMinus[a, b]],
-	$Failed,
-	{PmToInterval::nonum},
-	TestID -> "PmToInterval-symbolic"
+	PmSolve[x y == 0 && x + y == 0, {x, y}],
+	{{x -> 0, y -> 0}},
+	{PmSolve::nopair},
+	TestID -> "PmSolve-one-solution-message"
 ]
+
+(* A real root with a condition used to be lost: both solutions became Undefined. *)
+VerificationTest[
+	PmToList[x /. First[PmSolve[(x^2 == a && x > 0) || (x == Log[b] && x < 0), x, Reals]]] /. {a -> 4, b -> 1/2},
+	{2, Log[1/2]},
+	SameTest -> (Sort[Simplify[#1]] === Sort[Simplify[#2]] &),
+	TestID -> "PmSolve-conditional-roots-kept"
+]
+
+(* Two solutions for different variables used to be reported as "2 solution(s), not 2". *)
+VerificationTest[PmSolve[x y == 0, {x, y}], {{x -> 0}, {y -> 0}}, {Solve::svars, PmSolve::vars}, TestID -> "PmSolve-different-variables-message"]
+
+
+(* ::Section:: *)
+(*Pairing solutions when the equations contain a sign*)
+
+
+(* A root that doesn't depend on the sign comes out plain. *)
+VerificationTest[PmSolve[(x - 1) (x - PlusMinus[2, 3]) == 0, x], {{x -> 1}, {x -> PlusMinus[2, 3]}}, TestID -> "PmSolve-sign-independent-root"]
+
+(* Numeric roots are paired by value, so the real root of one branch pairs with the real root of the other. *)
+VerificationTest[
+	Select[x /. PmSolve[x^3 == PlusMinus[2, 1], x], Max[Abs[Im[N[PmToList[#]]]]] < 10^-10 &],
+	{PlusMinus[(3^(1/3) + 1)/2, (3^(1/3) - 1)/2]},
+	SameTest -> (Simplify[PmToList[#1] - PmToList[#2]] === {{0}, {0}} &),
+	TestID -> "PmSolve-real-roots-paired"
+]
+
+(* Paired solutions for different variables can't be merged. *)
+VerificationTest[Head[Quiet[PmSolve[x + PlusMinus[1, 1] y == 1, {x, y}]]], PmBranches, TestID -> "PmSolve-sign-different-variables"]
+
+
+(* ::Section:: *)
+(*Repeated roots, pairing order, options*)
+
+
+(* A repeated root used to leave the branches with different counts, so nothing was paired. *)
+VerificationTest[PmSolve[x^2 == PlusMinus[1, 1] x, x], {{x -> 0}, {x -> PlusMinus[1, 1]}}, TestID -> "PmSolve-repeated-root"]
+VerificationTest[PmSolve[(x - 1) (x - PlusMinus[2, 1]) == 0, x], {{x -> 1}, {x -> PlusMinus[2, 1]}}, TestID -> "PmSolve-repeated-root-common"]
+
+(* Real roots are paired with real roots, before complex ones. *)
+VerificationTest[
+	Simplify[PmToList[x /. PmSolve[(x - PlusMinus[1, 1]) (x - PlusMinus[2 I, 3]) == 0, x]]],
+	{{2, 3 + 2 I}, {0, -3 + 2 I}},
+	TestID -> "PmSolve-real-roots-before-complex"
+]
+
+(* The sign choice in ordinary merging: first nonzero \[PlusMinus] part, conditions, complex roots. *)
+VerificationTest[PmSolve[{x == 1, y^2 == 4}, {x, y}], {{x -> 1, y -> PlusMinus[2]}}, TestID -> "PmSolve-sign-from-first-nonzero-part"]
+VerificationTest[PmSolve[x^2 == a, x, Reals], {{x -> ConditionalExpression[PlusMinus[Sqrt[a]], a > 0]}}, TestID -> "PmSolve-sign-inside-condition"]
+VerificationTest[PmSolve[x^2 + 1. == 0, x], {{x -> PlusMinus[0. + 1. I]}}, TestID -> "PmSolve-sign-inexact-imaginary"]
+VerificationTest[PmPm[x /. First[PmSolve[x (x - (2 - 2 Sqrt[2])) == 0, x]]], -1 + Sqrt[2], TestID -> "PmSolve-sign-of-sum"]
+
+(* A branch that Solve can't solve gives PmBranches, never a list of garbage. *)
+VerificationTest[Head[Quiet[PmSolve[Sin[x] + x^x == Cos[x^2 + x] + PlusMinus[0, 1], x]]], PmBranches, TestID -> "PmSolve-unsolvable-branch"]
+
+(* "Simplifier" is PmSolve's own option, not passed to Solve. *)
+VerificationTest[PmSolve[x^2 - 2 x - 1 == 0, x, "Simplifier" -> Identity], {{x -> PlusMinus[1, Sqrt[2]]}}, SameTest -> (Simplify[#1 - #2] === {{0}} || Simplify[PmToList[x /. First[#1]] - PmToList[x /. First[#2]]] === {0, 0} &), TestID -> "PmSolve-Simplifier-option"]
+VerificationTest[PmSolve[x^2 + 1 == 0, x, Reals, "Simplifier" -> Identity], {}, {PmSolve::nopair}, TestID -> "PmSolve-Simplifier-option-with-domain"]
+
+(* Internal code doesn't go through the public PmQ, so a user definition can't change PmSolve. *)
+VerificationTest[
+	Unprotect[PmQ]; PmQ[_] := False; Protect[PmQ];
+	Length[PmSolve[x^2 == PlusMinus[4, 1], x]],
+	2,
+	TestID -> "PmSolve-does-not-use-public-PmQ"
+]
+
+(* A root repeated on both branches comes out once, not twice. *)
+VerificationTest[PmSolve[(x - PlusMinus[2, 1])^2 == 0, x], {{x -> PlusMinus[2, 1]}}, TestID -> "PmSolve-double-root-once"]
